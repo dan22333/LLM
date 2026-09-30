@@ -1,0 +1,589 @@
+<title>MoE Load Balancing & Lean-Verified Math Agents</title>
+<style>
+  :root {
+    --paper: #f7f8fb;
+    --paper-2: #ffffff;
+    --ink: #1a1d24;
+    --ink-soft: #464b57;
+    --ink-faint: #6b7280;
+    --rule: #e3e6ee;
+    --rule-strong: #cfd4e0;
+    /* MoE accent — indigo */
+    --moe: #4f46e5;
+    --moe-soft: #eef0fe;
+    --moe-line: #c9cdfa;
+    /* Lean accent — deep green */
+    --lean: #0f766e;
+    --lean-soft: #e6f4f1;
+    --lean-line: #b8ded7;
+    /* Systems / lineage accent — violet */
+    --sys: #7c3aed;
+    --sys-soft: #f2ecfe;
+    --sys-line: #d9c8fb;
+    --good: #15803d;
+    --bad: #b42318;
+    --shadow: 0 1px 2px rgba(20,24,40,.04), 0 8px 30px rgba(20,24,40,.06);
+    --serif: "Iowan Old Style", "Palatino Linotype", "Palatino", "Book Antiqua", Georgia, serif;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", "Consolas", monospace;
+    --maxw: 43rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14161c;
+      --paper-2: #1b1e26;
+      --ink: #e9ecf3;
+      --ink-soft: #b7bdcc;
+      --ink-faint: #8b93a5;
+      --rule: #2a2e39;
+      --rule-strong: #3a4150;
+      --moe: #a5a2ff;
+      --moe-soft: #23233a;
+      --moe-line: #3f3d6b;
+      --lean: #5ed0bf;
+      --lean-soft: #16302c;
+      --lean-line: #2c5750;
+      --sys: #c4b5fd;
+      --sys-soft: #241f3a;
+      --sys-line: #453a6b;
+      --good: #6ee7a0;
+      --bad: #ff9d92;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 40px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14161c; --paper-2: #1b1e26; --ink: #e9ecf3; --ink-soft: #b7bdcc;
+    --ink-faint: #8b93a5; --rule: #2a2e39; --rule-strong: #3a4150;
+    --moe: #a5a2ff; --moe-soft: #23233a; --moe-line: #3f3d6b;
+    --lean: #5ed0bf; --lean-soft: #16302c; --lean-line: #2c5750;
+    --sys: #c4b5fd; --sys-soft: #241f3a; --sys-line: #453a6b;
+    --good: #6ee7a0; --bad: #ff9d92;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 40px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"] {
+    --paper: #f7f8fb; --paper-2: #ffffff; --ink: #1a1d24; --ink-soft: #464b57;
+    --ink-faint: #6b7280; --rule: #e3e6ee; --rule-strong: #cfd4e0;
+    --moe: #4f46e5; --moe-soft: #eef0fe; --moe-line: #c9cdfa;
+    --lean: #0f766e; --lean-soft: #e6f4f1; --lean-line: #b8ded7;
+    --sys: #7c3aed; --sys-soft: #f2ecfe; --sys-line: #d9c8fb;
+    --good: #15803d; --bad: #b42318;
+    --shadow: 0 1px 2px rgba(20,24,40,.04), 0 8px 30px rgba(20,24,40,.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 19px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 1.4rem 6rem; }
+
+  /* ---- masthead ---- */
+  header.top {
+    max-width: var(--maxw); margin: 0 auto; padding: 4.5rem 1.4rem 2rem;
+  }
+  .kicker {
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--ink-faint); margin: 0 0 1.1rem;
+  }
+  h1.title {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(2rem, 6vw, 3rem);
+    line-height: 1.08; letter-spacing: -.015em; margin: 0 0 1.1rem; text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 1.12rem; color: var(--ink-soft); margin: 0; max-width: 38rem;
+    line-height: 1.55;
+  }
+  .byline {
+    margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .04em;
+    color: var(--ink-faint); display: flex; gap: 1.2rem; flex-wrap: wrap;
+  }
+
+  /* ---- part dividers ---- */
+  .part {
+    margin: 4.5rem auto 0;
+    scroll-margin-top: 2rem;
+  }
+  .part-tag {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .14em;
+    text-transform: uppercase; font-weight: 600;
+    padding: .3rem .7rem; border-radius: 999px;
+  }
+  .part-tag.moe { color: var(--moe); background: var(--moe-soft); border: 1px solid var(--moe-line); }
+  .part-tag.lean { color: var(--lean); background: var(--lean-soft); border: 1px solid var(--lean-line); }
+  .part h2 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(1.6rem, 4.5vw, 2.15rem);
+    line-height: 1.12; letter-spacing: -.01em; margin: 1rem 0 .6rem; text-wrap: balance;
+  }
+  .part .lede { color: var(--ink-soft); margin: 0 0 .5rem; font-size: 1.05rem; }
+
+  h3 {
+    font-family: var(--serif); font-weight: 600; font-size: 1.28rem;
+    letter-spacing: -.005em; margin: 2.6rem 0 .5rem; text-wrap: balance;
+  }
+  h3 .num {
+    font-family: var(--mono); font-size: .8rem; font-weight: 600;
+    margin-right: .55rem; vertical-align: .12em;
+  }
+  .moe h3 .num { color: var(--moe); }
+  .lean h3 .num { color: var(--lean); }
+
+  p { margin: .9rem 0; }
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+  a { color: inherit; }
+
+  code, .m {
+    font-family: var(--mono); font-size: .86em;
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    padding: .08em .32em; border-radius: 4px;
+  }
+
+  /* ---- math ---- */
+  .math-serif { font-family: var(--serif); }
+  .var { font-style: italic; font-family: var(--serif); }
+  .eq {
+    margin: 1.5rem 0; padding: 1.1rem 1rem;
+    text-align: center; overflow-x: auto;
+    font-size: 1.18rem; line-height: 2.1; font-family: var(--serif);
+  }
+  .eq.boxed {
+    background: var(--paper-2); border: 1px solid var(--rule-strong);
+    border-radius: 12px; box-shadow: var(--shadow);
+  }
+  .moe .eq.key { border-left: 4px solid var(--moe); }
+  .lean .eq.key { border-left: 4px solid var(--lean); }
+  .frac {
+    display: inline-flex; flex-direction: column; vertical-align: middle;
+    text-align: center; margin: 0 .18em; font-size: .92em;
+  }
+  .frac > span:first-child { border-bottom: 1.4px solid currentColor; padding: 0 .35em .05em; }
+  .frac > span:last-child { padding: .05em .35em 0; }
+  .sum { display: inline-flex; flex-direction: column; align-items: center;
+    vertical-align: middle; margin: 0 .12em; line-height: 1; }
+  .sum .big { font-size: 1.5em; line-height: .8; }
+  .sum .lim { font-size: .52em; line-height: 1.1; }
+  sub, sup { font-family: var(--serif); font-style: italic; }
+  .op { font-style: normal; }
+
+  /* ---- callouts ---- */
+  .callout {
+    margin: 1.6rem 0; padding: 1.1rem 1.25rem; border-radius: 12px;
+    background: var(--paper-2); border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+  }
+  .callout .label {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .14em;
+    text-transform: uppercase; font-weight: 600; margin: 0 0 .5rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout p:first-of-type { margin-top: 0; }
+  .callout.intuition { border-left: 4px solid var(--moe); }
+  .lean .callout.intuition { border-left: 4px solid var(--lean); }
+  .callout.intuition .label { color: var(--moe); }
+  .lean .callout.intuition .label { color: var(--lean); }
+  .callout.why { background: var(--moe-soft); border-color: var(--moe-line); }
+  .lean .callout.why { background: var(--lean-soft); border-color: var(--lean-line); }
+  .callout.why .label { color: var(--moe); }
+  .lean .callout.why .label { color: var(--lean); }
+
+  ul, ol { margin: .9rem 0; padding-left: 1.3rem; }
+  li { margin: .5rem 0; }
+  li::marker { color: var(--ink-faint); }
+
+  .steps { list-style: none; counter-reset: step; padding-left: 0; }
+  .steps > li {
+    position: relative; padding-left: 2.6rem; margin: 1rem 0;
+    counter-increment: step;
+  }
+  .steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: .05em;
+    width: 1.7rem; height: 1.7rem; border-radius: 8px;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: .8rem; font-weight: 600;
+    color: #fff;
+  }
+  .moe .steps > li::before { background: var(--moe); }
+  .lean .steps > li::before { background: var(--lean); }
+  @media (prefers-color-scheme: dark) {
+    .steps > li::before { color: #14161c; }
+  }
+  :root[data-theme="dark"] .steps > li::before { color: #14161c; }
+  :root[data-theme="light"] .steps > li::before { color: #fff; }
+
+  hr.soft { border: 0; border-top: 1px solid var(--rule); margin: 3rem 0 0; }
+
+  .kicker-line {
+    display: flex; align-items: center; gap: .75rem; margin: 2.4rem 0 0;
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-faint);
+  }
+  .kicker-line::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+
+  .tldr {
+    margin-top: 2rem; padding: 1.4rem 1.5rem; border-radius: 14px;
+    background: var(--paper-2); border: 1px solid var(--rule-strong);
+    box-shadow: var(--shadow);
+  }
+  .tldr .label { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-faint); margin: 0 0 .6rem; }
+
+  .callout.reward { text-align: center; }
+  .verdict-yes { color: var(--good); font-weight: 600; }
+  .verdict-no { color: var(--bad); font-weight: 600; }
+
+  @media (max-width: 560px) {
+    body { font-size: 17.5px; }
+    .eq { font-size: 1.02rem; }
+  }
+
+  /* ---- systems / lineage accent ---- */
+  .part-tag.sys { color: var(--sys); background: var(--sys-soft); border: 1px solid var(--sys-line); }
+  .sys h3 .num { color: var(--sys); }
+  .sys .eq.key { border-left: 4px solid var(--sys); }
+  .sys .callout.intuition { border-left: 4px solid var(--sys); }
+  .sys .callout.intuition .label { color: var(--sys); }
+  .sys .callout.why { background: var(--sys-soft); border-color: var(--sys-line); }
+  .sys .callout.why .label { color: var(--sys); }
+  .sys .steps > li::before { background: var(--sys); }
+
+  /* ---- system cards ---- */
+  .sys-card {
+    margin: 1.4rem 0; padding: 1.2rem 1.3rem; border-radius: 14px;
+    background: var(--paper-2); border: 1px solid var(--rule);
+    box-shadow: var(--shadow); position: relative;
+    border-top: 3px solid var(--card-accent, var(--sys));
+  }
+  .sys-card .hd { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .1rem; }
+  .sys-card .name { font-family: var(--serif); font-weight: 600; font-size: 1.22rem; letter-spacing: -.005em; }
+  .sys-card .meta { font-family: var(--mono); font-size: .7rem; letter-spacing: .06em; color: var(--ink-faint); text-transform: uppercase; }
+  .sys-card .role {
+    font-family: var(--mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--card-accent, var(--sys)); font-weight: 600; margin: .35rem 0 .1rem;
+  }
+  .sys-card p { margin: .55rem 0 0; }
+  .sys-card p:first-of-type { margin-top: .5rem; }
+
+  /* ---- lineage diagram ---- */
+  .lineage { margin: 1.8rem 0 .5rem; display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .lin-row { display: flex; gap: .7rem; justify-content: center; flex-wrap: wrap; }
+  .lin-node {
+    font-family: var(--mono); font-size: .78rem; font-weight: 600;
+    padding: .55rem .8rem; border-radius: 10px; text-align: center; line-height: 1.3;
+    border: 1px solid var(--rule-strong); background: var(--paper-2); color: var(--ink);
+    min-width: 8rem;
+  }
+  .lin-node small { display: block; font-weight: 400; font-size: .66rem; color: var(--ink-faint); letter-spacing: .02em; margin-top: .15rem; }
+  .lin-node.root { border-color: var(--sys-line); background: var(--sys-soft); color: var(--sys); }
+  .lin-node.math { border-color: var(--lean-line); background: var(--lean-soft); color: var(--lean); }
+  .lin-node.evolve { border-color: var(--moe-line); background: var(--moe-soft); color: var(--moe); }
+  .lin-arrow { color: var(--ink-faint); font-size: 1.1rem; line-height: 1; padding: .35rem 0; }
+  .lin-label { font-family: var(--mono); font-size: .64rem; letter-spacing: .06em; color: var(--ink-faint); text-transform: uppercase; text-align: center; max-width: 22rem; padding: .3rem 0; }
+  .lin-split { display: flex; gap: 1.4rem; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+  .lin-branch { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .fade { opacity: 0; transform: translateY(8px); animation: rise .7s cubic-bezier(.2,.7,.2,1) forwards; }
+    .fade:nth-child(2){ animation-delay:.05s } .fade:nth-child(3){ animation-delay:.1s }
+    @keyframes rise { to { opacity: 1; transform: none; } }
+  }
+</style>
+
+<header class="top">
+  <p class="kicker fade">Technical deep-dive · study notes</p>
+  <h1 class="title fade">Two ideas that make hard optimization work</h1>
+  <p class="standfirst fade">How the <strong>load-balancing loss</strong> keeps Mixture-of-Experts models from collapsing — and how coding agents solve olympiad math by letting <strong>Lean</strong> grade their proofs.</p>
+  <div class="byline">
+    <span>Prepared for Daniel</span>
+    <span>2026 · LLM learnings</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ===================== PART 1 ===================== -->
+  <section class="part moe" id="moe">
+    <span class="part-tag moe">Part 1 — Mixture of Experts</span>
+    <h2>The load-balancing loss</h2>
+    <p class="lede">Where it's computed, what it's added to, how it's built, and why the exact form works.</p>
+
+    <h3><span class="num">1.1</span>The problem it solves</h3>
+    <p>An MoE layer replaces a dense feed-forward block. A small <strong>router</strong> (gating network) looks at each token and picks the top-<span class="var">k</span> of <span class="var">N</span> experts to process it. Only those experts run — that's the whole point: sparse compute, huge parameter count, cheap forward pass.</p>
+    <p>The failure mode is <strong>routing collapse</strong>. Early in training a few experts get slightly better, the router sends them more tokens, they improve faster, the router sends them <em>even more</em>. A rich-get-richer loop. You end up with a handful of experts doing all the work and the rest as dead weight — you paid for capacity you never use, and the per-expert capacity buffers overflow (dropped tokens).</p>
+    <p>The load-balancing loss is a regularizer that fights this collapse.</p>
+
+    <h3><span class="num">1.2</span>Setup and notation</h3>
+    <p>For a batch of <span class="var">T</span> tokens and <span class="var">N</span> experts, the router produces a logit <span class="var">h<sub>i</sub></span>(<span class="var">x</span>) per expert, then a softmax:</p>
+    <div class="eq boxed">
+      <span class="var">p<sub>i</sub></span>(<span class="var">x</span>) <span class="op">=</span>
+      <span class="frac">
+        <span><span class="op">e</span><sup><span class="var">h<sub>i</sub></span>(<span class="var">x</span>)</sup></span>
+        <span><span class="sum"><span class="lim">N</span><span class="big">&Sigma;</span><span class="lim">j=1</span></span> <span class="op">e</span><sup><span class="var">h<sub>j</sub></span>(<span class="var">x</span>)</sup></span>
+      </span>
+    </div>
+    <p><span class="var">p<sub>i</sub></span>(<span class="var">x</span>) is the router's <em>soft</em> probability of sending token <span class="var">x</span> to expert <span class="var">i</span>. The actual routing is the hard <strong>top-k</strong> (Switch Transformer uses <span class="var">k</span> = 1). Now define two per-expert quantities over the batch:</p>
+
+    <div class="eq boxed">
+      <span class="var">f<sub>i</sub></span> <span class="op">=</span>
+      <span class="frac"><span>1</span><span><span class="var">T</span></span></span>
+      <span class="sum"><span class="big">&Sigma;</span><span class="lim">x</span></span>
+      𝟙{ token <span class="var">x</span> routed to <span class="var">i</span> }
+      <span style="display:inline-block; width:1.6rem"></span>
+      <span class="var">P<sub>i</sub></span> <span class="op">=</span>
+      <span class="frac"><span>1</span><span><span class="var">T</span></span></span>
+      <span class="sum"><span class="big">&Sigma;</span><span class="lim">x</span></span>
+      <span class="var">p<sub>i</sub></span>(<span class="var">x</span>)
+    </div>
+    <p><span class="var">f<sub>i</sub></span> is the <strong>hard load</strong> — a histogram built from <code>argmax</code> (counts). <span class="var">P<sub>i</sub></span> is the <strong>soft load</strong> — the average router probability. Hold onto that distinction; the whole trick rides on it.</p>
+
+    <h3><span class="num">1.3</span>The loss</h3>
+    <p>The Switch Transformer / GShard auxiliary loss:</p>
+    <div class="eq boxed key">
+      <span class="var">&#8466;<sub>aux</sub></span> <span class="op">=</span>
+      <span class="var">&alpha;</span> <span class="op">&middot;</span> <span class="var">N</span> <span class="op">&middot;</span>
+      <span class="sum"><span class="lim">N</span><span class="big">&Sigma;</span><span class="lim">i=1</span></span>
+      <span class="var">f<sub>i</sub></span> <span class="var">P<sub>i</sub></span>
+    </div>
+    <ul>
+      <li><span class="var">N</span> scales it so the minimum value is <strong>1</strong> regardless of expert count — this makes <span class="var">&alpha;</span> transferable across model sizes.</li>
+      <li><span class="var">&alpha;</span> is a small coefficient, typically ~10<sup>-2</sup>: big enough to enforce balance, small enough not to drown the language-modeling objective.</li>
+    </ul>
+
+    <h3><span class="num">1.4</span>Where it's computed and what it's added to</h3>
+    <p>It is computed <strong>inside every MoE layer</strong> (each layer has its own router, so its own <span class="var">f</span>, <span class="var">P</span>), summed over all MoE layers, and <strong>added to the main next-token cross-entropy loss</strong> as a single scalar:</p>
+    <div class="eq boxed">
+      <span class="var">&#8466;<sub>total</sub></span> <span class="op">=</span>
+      <span class="var">&#8466;<sub>CE</sub></span> <span class="op">+</span>
+      <span class="var">&alpha;</span>
+      <span class="sum"><span class="lim">layers &#8467;</span><span class="big">&Sigma;</span></span>
+      <span class="var">&#8466;<sub>aux</sub></span><sup>(<span class="var">&#8467;</span>)</sup>
+    </div>
+    <div class="callout intuition">
+      <p class="label">Direct answer to your question</p>
+      <p>It is <strong>not</strong> attached to a "final layer." It's a <strong>global auxiliary term added to the overall training loss.</strong> Every router in the network receives a gradient from it. Backprop of <span class="var">&#8466;<sub>CE</sub></span> teaches "route tokens to experts that predict well"; backprop of <span class="var">&#8466;<sub>aux</sub></span> teaches "and spread the load evenly." They're summed and optimized jointly.</p>
+    </div>
+
+    <h3><span class="num">1.5</span>Why the form <span class="var">&Sigma; f<sub>i</sub> P<sub>i</sub></span> — the key trick</h3>
+    <p>This is the part most explanations skip. You'd <em>want</em> to minimize imbalance directly — say, the variance of <span class="var">f<sub>i</sub></span>. But <span class="var">f<sub>i</sub></span> comes from an <code>argmax</code>: it's a <strong>non-differentiable</strong> count. No gradient flows through it. You cannot train the router by pushing on <span class="var">f<sub>i</sub></span>.</p>
+    <p><span class="var">P<sub>i</sub></span>, by contrast, is a smooth softmax average — <strong>fully differentiable</strong>. The product <span class="var">f<sub>i</sub></span><span class="var">P<sub>i</sub></span> resolves the tension:</p>
+    <ul>
+      <li><span class="var">f<sub>i</sub></span> acts as a <strong>non-differentiable weight</strong> — "how overloaded is expert <span class="var">i</span> right now."</li>
+      <li><span class="var">P<sub>i</sub></span> <strong>carries the gradient</strong> — it's the knob the router can actually turn.</li>
+    </ul>
+    <p>Take the gradient with respect to the router's soft mass:</p>
+    <div class="eq boxed key">
+      <span class="frac">
+        <span>&part; <span class="var">&#8466;<sub>aux</sub></span></span>
+        <span>&part; <span class="var">P<sub>i</sub></span></span>
+      </span>
+      <span class="op">=</span>
+      <span class="var">&alpha;</span> <span class="var">N</span> <span class="var">f<sub>i</sub></span>
+    </div>
+    <p>Read it literally: the downward push on expert <span class="var">i</span>'s router probability is <strong>proportional to how overloaded it is</strong>. Overloaded experts (<span class="var">f<sub>i</sub></span> large) get their routing probability suppressed hard; starved experts (<span class="var">f<sub>i</sub></span> &asymp; 0) get almost no penalty, so the router is free to send them more. Exactly the corrective signal you want — and it's differentiable because it lands on <span class="var">P<sub>i</sub></span>.</p>
+
+    <h3><span class="num">1.6</span>Why the minimum is a balanced state</h3>
+    <p>Both <span class="var">f</span> and <span class="var">P</span> are distributions on the simplex (<span class="var">&Sigma;f<sub>i</sub></span> = 1, <span class="var">&Sigma;P<sub>i</sub></span> &asymp; 1). The loss is a <strong>dot product</strong> &#10216;<span class="var">f</span>, <span class="var">P</span>&#10217; of two probability vectors. Subject to those constraints, it is minimized when both are <strong>uniform</strong>, <span class="var">f<sub>i</sub></span> = <span class="var">P<sub>i</sub></span> = 1/<span class="var">N</span>:</p>
+    <div class="eq boxed">
+      <span class="var">N</span>
+      <span class="sum"><span class="lim">N</span><span class="big">&Sigma;</span><span class="lim">i=1</span></span>
+      <span class="frac"><span>1</span><span><span class="var">N</span></span></span>
+      <span class="op">&middot;</span>
+      <span class="frac"><span>1</span><span><span class="var">N</span></span></span>
+      <span class="op">=</span>
+      <span class="var">N</span> <span class="op">&middot;</span> <span class="var">N</span> <span class="op">&middot;</span>
+      <span class="frac"><span>1</span><span><span class="var">N</span><sup>2</sup></span></span>
+      <span class="op">=</span> 1
+      <span style="color:var(--ink-faint); font-family:var(--mono); font-size:.7rem; margin-left:.8rem">(the minimum)</span>
+    </div>
+    <div class="callout intuition">
+      <p class="label">Intuition</p>
+      <p>The dot product of two distributions is <strong>largest when both are spiky and aligned</strong> on the same experts (that's collapse), and <strong>smallest when both are flat</strong>. So minimizing this one scalar literally <em>is</em> pushing the router toward uniform utilization.</p>
+    </div>
+
+    <h3><span class="num">1.7</span>Two companions you'll see in practice</h3>
+    <p><strong>Router z-loss</strong> (ST-MoE) keeps the router logits from blowing up — numerical stability and sharper routing:</p>
+    <div class="eq boxed">
+      <span class="var">&#8466;<sub>z</sub></span> <span class="op">=</span>
+      <span class="frac"><span>1</span><span><span class="var">T</span></span></span>
+      <span class="sum"><span class="big">&Sigma;</span><span class="lim">x</span></span>
+      <span style="font-size:1.3em">(</span>
+      <span class="op">log</span>
+      <span class="sum"><span class="lim">N</span><span class="big">&Sigma;</span><span class="lim">i=1</span></span>
+      <span class="op">e</span><sup><span class="var">h<sub>i</sub></span>(<span class="var">x</span>)</sup>
+      <span style="font-size:1.3em">)</span><sup>2</sup>
+    </div>
+    <p>It penalizes a large log-sum-exp, i.e. large logits, and is added with its own small coefficient.</p>
+    <p><strong>Auxiliary-loss-free balancing</strong> (DeepSeek-V3) — the newer trend. Instead of adding <span class="var">&#8466;<sub>aux</sub></span> (which slightly hurts quality by fighting the LM objective), add a <strong>per-expert bias</strong> <span class="var">b<sub>i</sub></span> to the score used for top-k selection:</p>
+    <div class="eq boxed">
+      select top-<span class="var">k</span> of &nbsp;( <span class="var">h<sub>i</sub></span>(<span class="var">x</span>) <span class="op">+</span> <span class="var">b<sub>i</sub></span> )
+    </div>
+    <p>The bias is <strong>not trained by gradients</strong> — a simple control rule nudges it after each step: if expert <span class="var">i</span> was overloaded, decrease <span class="var">b<sub>i</sub></span>; if starved, increase it. You get balance without ever perturbing the main-loss gradient. Frontier MoE models lean this way now because the classic aux loss imposes a small "balance tax" on quality.</p>
+  </section>
+
+  <hr class="soft">
+
+  <!-- ===================== PART 2 ===================== -->
+  <section class="part lean" id="lean">
+    <span class="part-tag lean">Part 2 — Formal math agents</span>
+    <h2>Solving math with Lean verification</h2>
+    <p class="lede">How OpenAI/DeepMind-style agents turn olympiad proofs into a search problem with a perfect referee.</p>
+
+    <h3><span class="num">2.1</span>What Lean gives you: a verifier that can't be fooled</h3>
+    <p>Lean is an <strong>interactive theorem prover</strong>. Math is written in its dependent type theory, where a deep correspondence (Curry–Howard) holds:</p>
+    <div class="eq boxed key">
+      <span class="math-serif"><strong>a proof</strong> &nbsp;&equiv;&nbsp; <strong>a term</strong></span>
+      <span style="display:inline-block; width:2rem"></span>
+      <span class="math-serif"><strong>a theorem</strong> &nbsp;&equiv;&nbsp; <strong>that term's type</strong></span>
+    </div>
+    <p>Proving "&radic;2 is irrational" means constructing a term whose <em>type</em> is the formal statement. A tiny, trusted <strong>kernel</strong> then type-checks that term. If it checks and contains no <code>sorry</code> (placeholder), the theorem is true — modulo trusting the kernel, which is a few thousand lines and heavily audited.</p>
+    <div class="callout why">
+      <p class="label">Why this matters for LLMs</p>
+      <p>You get a <strong>binary, mechanical, zero-false-positive reward signal.</strong> The proof compiles or it doesn't. No human grader, no "looks plausible," no reward-hacking a fuzzy judge. Compare informal math (an AIME-style numeric answer), where the only check is <em>did the final number match</em> — the reasoning in between can be nonsense and still land right. Lean verifies the <strong>entire chain</strong>.</p>
+    </div>
+
+    <h3><span class="num">2.2</span>The pipeline</h3>
+    <ol class="steps">
+      <li><strong>Autoformalization.</strong> An LLM translates the natural-language problem into a formal Lean <code>theorem</code> statement — the goal to be closed. This step is itself error-prone and a research problem: a wrong formalization means you prove the wrong thing.</li>
+      <li><strong>Proof generation as a REPL loop.</strong> The agent doesn't emit a whole proof blind. Lean exposes a <strong>proof state</strong> (current goal + hypotheses). The model proposes a <strong>tactic</strong> — a step like <code>induction n</code> or <code>rw [lemma]</code> — Lean executes it and returns the <em>new</em> state: either subgoals, or an error.</li>
+      <li><strong>Search over the tactic tree.</strong> Each proof state is a node; each candidate tactic is an edge to a child state. The model is a <strong>policy</strong> (propose promising tactics) and often a <strong>value</strong> (how close is this state to done?). Run best-first search or MCTS; the kernel prunes invalid branches instantly, so the search never wanders into false territory.</li>
+      <li><strong>Error feedback.</strong> A failed tactic returns a specific message ("unification failed", "unknown identifier"). The agent conditions on it and revises — the same debugging loop a coding agent runs against a compiler or failing test.</li>
+    </ol>
+    <div class="eq boxed" style="font-size:1.02rem">
+      state<sub>0</sub>
+      <span class="op" style="color:var(--lean)"> —tactic₁&rarr; </span>
+      state<sub>1</sub>
+      <span class="op" style="color:var(--lean)"> —tactic₂&rarr; </span>
+      &hellip;
+      <span class="op" style="color:var(--lean)"> &rarr; </span>
+      <strong style="color:var(--good)">QED</strong> (no goals left)
+    </div>
+    <p>Environments like <strong>LeanDojo</strong> expose exactly this loop programmatically so an agent can drive it.</p>
+
+    <h3><span class="num">2.3</span>Why it works: RL with verifiable rewards</h3>
+    <p>The verifier is what makes reinforcement learning tractable. The reward is just:</p>
+    <div class="callout reward why">
+      <p style="font-family:var(--serif); font-size:1.2rem; margin:.3rem 0">
+        <span class="var">R</span>(proof) =
+        <span class="verdict-yes">1</span> if the Lean kernel accepts (no <code>sorry</code>),
+        &nbsp;<span class="verdict-no">0</span> otherwise
+      </p>
+    </div>
+    <p>Because reward is <strong>free and exact</strong>, you can run <strong>expert iteration / self-play</strong> — the AlphaProof recipe:</p>
+    <ol class="steps">
+      <li>Take a large corpus of problems, auto-formalized into Lean (AlphaProof did this on the order of a million).</li>
+      <li>Let the current model attempt them, searching for proofs.</li>
+      <li><strong>Keep every proof Lean verifies.</strong> These become new gold training data — no human labeling needed.</li>
+      <li>Fine-tune on the verified proofs &rarr; stronger model &rarr; harder problems fall &rarr; more verified proofs. Loop.</li>
+    </ol>
+    <p>This bootstraps unlimited, guaranteed-correct training data — the scarce resource in math. It's the AlphaZero pattern: a perfect, cheap referee lets the system generate its own curriculum.</p>
+
+    <h3><span class="num">2.4</span>Landmarks worth knowing</h3>
+    <ul>
+      <li><strong>AlphaProof</strong> (DeepMind, 2024) — Lean-based, expert-iteration RL; reached <strong>IMO silver-medal</strong> level. At test time it even generates and trains on <em>variants</em> of the target problem.</li>
+      <li><strong>DeepSeek-Prover</strong> (V1.5 / V2) — open models trained with Lean feedback and tree search.</li>
+      <li><strong>miniF2F</strong> — the standard benchmark of formalized olympiad problems.</li>
+      <li><strong>Mathlib</strong> — Lean's vast library of formalized math; the lemma database tactics draw on.</li>
+    </ul>
+    <div class="callout intuition">
+      <p class="label">The one-sentence intuition</p>
+      <p>For fuzzy tasks an LLM's own confidence is the only signal, and it hallucinates. Lean replaces that with a <strong>kernel that mechanically certifies correctness</strong> — so even a sloppy, hallucination-prone generator becomes trustworthy, because only kernel-verified proofs survive, and that same certificate doubles as a perfect reward for training the generator to get better.</p>
+    </div>
+  </section>
+
+  <hr class="soft">
+
+  <!-- ===================== PART 3 ===================== -->
+  <section class="part sys" id="systems">
+    <span class="part-tag sys">Part 3 — The tools & the "Alpha" lineage</span>
+    <h2>LeanDojo, AlphaProof, AlphaZero, AlphaEvolve</h2>
+    <p class="lede">What each one actually is, where it came from, and how they're related (and where they're not).</p>
+
+    <h3><span class="num">3.1</span>LeanDojo — the environment that makes Lean drivable</h3>
+    <p>Lean on its own is an interactive tool for humans typing at an editor. To let a <em>program</em> attempt proofs, you need an API that loads a theorem, feeds it tactics, and hands back the resulting state. That's <strong>LeanDojo</strong> — an open-source toolkit and benchmark from a Caltech-led group (2023).</p>
+    <p>It does three distinct jobs:</p>
+    <ol class="steps">
+      <li><strong>Tracing / data extraction.</strong> It parses Lean + Mathlib and pulls out every proof as structured <span class="m">(proof state → tactic → next state)</span> triples, plus which library lemmas ("premises") each step used. This turns the entire Mathlib corpus into supervised training data.</li>
+      <li><strong>An interaction gym.</strong> A Gym-style environment: reset to a theorem, <code>run_tac(state, tactic)</code>, observe the new goal or an error. This is <em>exactly</em> the REPL loop from Part 2 — LeanDojo is what exposes it programmatically so an agent (or a search algorithm) can drive Lean in a reproducible sandbox.</li>
+      <li><strong>A benchmark + a baseline prover.</strong> It ships the "LeanDojo Benchmark" and <strong>ReProver</strong>, a retrieval-augmented model: before generating a tactic it <em>retrieves</em> likely-relevant lemmas from Mathlib (there are hundreds of thousands), which sidesteps the model having to memorize the whole library.</li>
+    </ol>
+    <div class="callout intuition">
+      <p class="label">In one line</p>
+      <p>LeanDojo is the <strong>plumbing</strong>: it converts Lean from a human editor into a machine-drivable environment with training data and a benchmark. It is <em>infrastructure</em>, not a champion solver — the thing research systems are built <em>on top of</em>.</p>
+    </div>
+
+    <h3><span class="num">3.2</span>AlphaZero — the ancestor idea (2017)</h3>
+    <p>Before the math systems, the template. <strong>AlphaZero</strong> (DeepMind, 2017) mastered Go, chess, and shogi <em>from scratch</em> — no human games, only the rules. Its recipe is the thing every later "Alpha" system reuses:</p>
+    <ul>
+      <li>A single neural net outputs a <strong>policy</strong> (which moves look promising) and a <strong>value</strong> (how good is this position).</li>
+      <li>That net <strong>guides a tree search</strong> (Monte-Carlo Tree Search) instead of brute force.</li>
+      <li>Training is pure <strong>self-play</strong>: play games against itself, and — crucially — the <strong>rules of the game are a perfect referee</strong> that says who won. That ground-truth outcome is the reward.</li>
+    </ul>
+    <p>Lineage: AlphaGo (2016, learned from human games) → AlphaGo Zero (2017, self-play, Go only) → <strong>AlphaZero</strong> (2017, one algorithm for three games) → MuZero (2019, learns the rules too).</p>
+    <div class="callout why">
+      <p class="label">The reusable insight</p>
+      <p><strong>Learned policy/value + search + a perfect automatic referee</strong> lets a system bootstrap superhuman skill with zero human labels. Now swap the "game": if you have a perfect referee for <em>proofs</em>, you can play the same game with math.</p>
+    </div>
+
+    <h3><span class="num">3.3</span>AlphaProof — AlphaZero, but the game is theorem-proving (2024)</h3>
+    <p><strong>AlphaProof</strong> (DeepMind, 2024) is the direct descendant that made the swap. Its architecture maps one-to-one onto AlphaZero:</p>
+    <div class="sys-card" style="--card-accent: var(--sys)">
+      <div class="role">The mapping</div>
+      <p style="margin-top:.4rem"><strong>Game position</strong> → a Lean proof state. &nbsp;<strong>Legal moves</strong> → tactics. &nbsp;<strong>Policy/value net</strong> → a language model (built on Gemini) proposing and scoring tactics. &nbsp;<strong>The perfect referee (game rules)</strong> → <strong>the Lean kernel</strong>. &nbsp;<strong>Self-play</strong> → attempting a huge bank of problems and keeping the verified proofs.</p>
+    </div>
+    <p>Concretely it works in two stages: a <strong>formalizer</strong> network auto-translates ~1&nbsp;million natural-language problems into Lean statements, then a <strong>solver</strong> searches for proofs, trained by AlphaZero-style reinforcement learning against Lean's yes/no verdict. At test time it does something striking — it <em>generates variations</em> of the target problem and tries to prove those too, a self-reinforcing loop that sharpens it on the specific question in front of it.</p>
+    <p>Result: at <strong>IMO 2024</strong> it solved 3 of the 6 problems (paired with <strong>AlphaGeometry 2</strong> for the geometry one), scoring 28/42 — <strong>silver-medal</strong> level, one point below gold. Every answer was a Lean-verified proof.</p>
+    <div class="callout intuition">
+      <p class="label">So, related to AlphaZero?</p>
+      <p><strong>Yes — directly.</strong> AlphaProof <em>is</em> the AlphaZero recipe with the Lean kernel playing the role the game rules played in Go. Same self-play + search + learned policy/value, different referee.</p>
+    </div>
+
+    <h3><span class="num">3.4</span>AlphaEvolve — a cousin, not a sibling (2025)</h3>
+    <p><strong>AlphaEvolve</strong> (DeepMind, 2025) is where people get confused. It shares the family DNA — <em>an LLM in a loop with an automatic evaluator</em> — but it is a <strong>different method</strong> for a <strong>different job</strong>.</p>
+    <p>It's an <strong>evolutionary coding agent</strong>: Gemini proposes edits to a program, an automatic <strong>evaluator scores</strong> each candidate, the best survive and get mutated further — genetic programming with an LLM as the mutation operator. It descends from DeepMind's earlier <strong>FunSearch</strong> (2023). It doesn't prove theorems; it <em>evolves algorithms and code</em> for any problem you can score automatically.</p>
+    <p>What it found: a way to multiply two 4×4 matrices with <strong>48 multiplications</strong> (beating Strassen's 49 from 1969), improved bounds on open math problems (e.g. the kissing number in 11 dimensions), and real Google infrastructure wins — data-center scheduling, TPU circuit tweaks, and a ~23% speedup of a Gemini training kernel.</p>
+    <div class="callout why">
+      <p class="label">How the three relate</p>
+      <p>All descend from the same idea AlphaZero crystallized: <strong>a generator (search/LLM) + an automatic ground-truth evaluator, in a loop.</strong> They differ in the <em>generator</em> and the <em>evaluator</em>:</p>
+    </div>
+
+    <!-- lineage diagram -->
+    <div class="lineage">
+      <div class="lin-node root">AlphaZero &nbsp;(2017)<small>self-play + search + learned policy/value</small></div>
+      <div class="lin-label">the reusable pattern: generator + perfect automatic referee, looped</div>
+      <div class="lin-arrow">&#8595;</div>
+      <div class="lin-split">
+        <div class="lin-branch">
+          <div class="lin-label">referee = a formal verifier</div>
+          <div class="lin-node math">AlphaProof &nbsp;(2024)<small>referee: Lean kernel · search over tactics</small></div>
+          <div class="lin-arrow">&#8593;</div>
+          <div class="lin-node">LeanDojo &nbsp;(2023)<small>the environment it drives</small></div>
+        </div>
+        <div class="lin-branch">
+          <div class="lin-label">referee = an automatic score function</div>
+          <div class="lin-node evolve">AlphaEvolve &nbsp;(2025)<small>generator: Gemini · evolutionary code search</small></div>
+          <div class="lin-arrow">&#8593;</div>
+          <div class="lin-node">FunSearch &nbsp;(2023)<small>its predecessor</small></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout intuition">
+      <p class="label">Bottom line on the relationships</p>
+      <p><strong>AlphaProof ↔ AlphaZero:</strong> same algorithm family, direct descendant. <strong>AlphaProof ↔ AlphaEvolve:</strong> cousins — same "LLM + auto-verifier loop" philosophy and the same "Alpha" lab, but different techniques (RL proof-search vs. evolutionary code-search) and different domains. <strong>LeanDojo</strong> sits underneath the math branch as the environment, not a competitor to any of them.</p>
+    </div>
+  </section>
+
+  <!-- ===================== TIE-OFF ===================== -->
+  <div class="kicker-line">The common thread</div>
+  <div class="tldr">
+    <p class="label">Why these belong in one document</p>
+    <p style="margin:0">Every system here turns an intractable optimization into a workable one by <strong>manufacturing the right signal</strong>. <span style="color:var(--moe); font-weight:600">MoE</span> conjures a <em>differentiable</em> balance signal (<span class="var">f<sub>i</sub>P<sub>i</sub></span>) out of a non-differentiable count. <span style="color:var(--lean); font-weight:600">Lean</span> conjures an <em>exact, verifiable</em> reward out of otherwise-ungradeable reasoning. And the <span style="color:var(--sys); font-weight:600">Alpha family</span> shows the payoff at scale: once you have a cheap, perfect referee, a generator can bootstrap its own superhuman training data. In every case, the cheap-but-precise signal is the whole game.</p>
+  </div>
+
+</div>

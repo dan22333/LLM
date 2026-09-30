@@ -1,0 +1,88 @@
+/* Book-style stylesheet for the learnings notebook PDF.
+   Consumed by build_learnings_pdf.sh (wrapped in <style> and injected via
+   pandoc --include-in-header). Designed for headless-Chrome print-to-pdf. */
+
+@page { size: A4; margin: 22mm 20mm 20mm 20mm; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #1b1b1b;
+  margin: 0;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Title page ---------- */
+#title-block-header { text-align: center; margin: 32vh 0 0 0; page-break-after: always; }
+h1.title {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 30pt; font-weight: 800; letter-spacing: -0.02em;
+  color: #14213d; border: none; margin: 0; padding: 0; page-break-before: avoid;
+}
+#title-block-header::after {
+  content: "Project learnings notebook";
+  display: block; font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12pt; font-weight: 400; color: #6b7280; margin-top: 10px; letter-spacing: 0.02em;
+}
+
+/* ---------- Table of contents ---------- */
+nav#TOC { page-break-after: always; font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+nav#TOC::before {
+  content: "Contents"; display: block; font-size: 20pt; font-weight: 800; color: #14213d; margin: 0 0 18px 0;
+}
+nav#TOC ul { list-style: none; padding-left: 0; margin: 0; }
+nav#TOC ul ul { padding-left: 16px; }
+nav#TOC li { margin: 2px 0; }
+nav#TOC > ul > li { margin-top: 8px; }
+nav#TOC > ul > li > a { font-weight: 700; color: #14213d; font-size: 11pt; }
+nav#TOC a { text-decoration: none; color: #374151; font-size: 9.5pt; }
+
+/* ---------- Headings ---------- */
+h1, h2, h3, h4 { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: #14213d; line-height: 1.25; page-break-after: avoid; }
+h1:not(.title) {
+  font-size: 21pt; font-weight: 800; letter-spacing: -0.01em;
+  page-break-before: always; border-bottom: 3px solid #14213d; padding-bottom: 6px; margin: 0 0 18px 0;
+}
+h2 { font-size: 13.5pt; font-weight: 700; margin: 22px 0 4px 0; padding-top: 6px; color: #1d3557; }
+h3 { font-size: 11.5pt; font-weight: 700; margin: 16px 0 3px; }
+h4 { font-size: 10.5pt; font-weight: 700; margin: 12px 0 2px; color: #374151; }
+h2, h3 { break-after: avoid-page; }
+
+p { margin: 7px 0; orphans: 3; widows: 3; }
+strong { font-weight: 650; color: #111; }
+a { color: #1d4ed8; text-decoration: none; }
+hr { border: none; border-top: 1px solid #e2e5ea; margin: 20px 0; }
+
+/* ---------- Code ---------- */
+code {
+  font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 8.6pt; background: #f4f5f7; padding: 1px 4px; border-radius: 3px; color: #b91c4b;
+}
+pre {
+  background: #f7f8fa; border: 1px solid #e2e5ea; border-radius: 6px; padding: 10px 12px;
+  font-size: 8.4pt; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+  page-break-inside: avoid; margin: 10px 0;
+}
+pre code { background: none; padding: 0; color: #1f2328; font-size: inherit; }
+
+/* ---------- Tables ---------- */
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 9pt; page-break-inside: avoid; }
+th, td { border: 1px solid #d5d9e0; padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: #eef1f6; font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; font-weight: 700; color: #14213d; }
+tr:nth-child(even) td { background: #fafbfc; }
+
+/* ---------- Blockquote callout (key takeaways) ---------- */
+blockquote {
+  margin: 12px 0; padding: 8px 14px; border-left: 4px solid #14213d;
+  background: #f2f5fa; border-radius: 0 5px 5px 0; color: #1d3557;
+}
+blockquote p { margin: 4px 0; }
+
+ul, ol { margin: 7px 0; padding-left: 22px; }
+li { margin: 3px 0; }
+
+/* ---------- Math (KaTeX) ---------- */
+.katex-display { overflow-x: auto; overflow-y: hidden; margin: 10px 0; }
+.katex { font-size: 1.02em; }

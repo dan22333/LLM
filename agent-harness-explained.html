@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Study Notes — Building the Agent Harness</title>
+<style>
+:root{
+  --ground:#f5f4f0; --panel:#ffffff; --panel-2:#f6f5f1; --ink:#1a1a1c; --ink-soft:#33342f;
+  --muted:#5f6058; --faint:#8c8d82; --line:#e5e3da; --line-strong:#d0cec2;
+  --accent:#b5641a; --accent-soft:#f0e2cf; --accent-ink:#8a4a10;
+  --teal:#256b64; --teal-soft:#d8e8e4;
+  --good:#2b6e46; --good-soft:#dcebdf; --warn:#a6640f; --danger:#a83c2c; --danger-soft:#f0dcd6;
+  --shadow:0 1px 2px rgba(26,26,28,.05),0 8px 28px -14px rgba(26,26,28,.14);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --read:730px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#101113; --panel:#17181b; --panel-2:#1c1e21; --ink:#eceae4; --ink-soft:#cbc9c1;
+    --muted:#9a998e; --faint:#6d6d64; --line:#282a2d; --line-strong:#383a3d;
+    --accent:#dd9a4a; --accent-soft:#352a19; --accent-ink:#eeb463;
+    --teal:#54b5a7; --teal-soft:#16302c; --good:#54bd83; --good-soft:#14281c;
+    --warn:#dd9a4a; --danger:#e07b6a; --danger-soft:#2c1713;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="light"]{--ground:#f5f4f0;--panel:#ffffff;--panel-2:#f6f5f1;--ink:#1a1a1c;--ink-soft:#33342f;--muted:#5f6058;--faint:#8c8d82;--line:#e5e3da;--line-strong:#d0cec2;--accent:#b5641a;--accent-soft:#f0e2cf;--accent-ink:#8a4a10;--teal:#256b64;--teal-soft:#d8e8e4;--good:#2b6e46;--good-soft:#dcebdf;--warn:#a6640f;--danger:#a83c2c;--danger-soft:#f0dcd6;--shadow:0 1px 2px rgba(26,26,28,.05),0 8px 28px -14px rgba(26,26,28,.14);}
+:root[data-theme="dark"]{--ground:#101113;--panel:#17181b;--panel-2:#1c1e21;--ink:#eceae4;--ink-soft:#cbc9c1;--muted:#9a998e;--faint:#6d6d64;--line:#282a2d;--line-strong:#383a3d;--accent:#dd9a4a;--accent-soft:#352a19;--accent-ink:#eeb463;--teal:#54b5a7;--teal-soft:#16302c;--good:#54bd83;--good-soft:#14281c;--warn:#dd9a4a;--danger:#e07b6a;--danger-soft:#2c1713;--shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px -16px rgba(0,0,0,.7);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:17.5px;line-height:1.72;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+h1,h2,h3,h4{font-family:var(--serif);font-weight:600;line-height:1.18;text-wrap:balance;margin:0}
+p{margin:0 0 1.05em}
+a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 38%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+em{font-style:italic}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dim{color:var(--muted)}
+.wrap{max-width:var(--read);margin:0 auto;padding:0 24px}
+.wide{max-width:1080px;margin:0 auto;padding:0 24px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink);font-weight:600}
+header.top{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--ground) 90%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .bar{max-width:1180px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:16px;height:54px}
+.brand{font-family:var(--mono);font-size:12px;letter-spacing:.05em;font-weight:600;white-space:nowrap}
+.brand b{color:var(--accent-ink)}
+nav.secs{display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none}
+nav.secs::-webkit-scrollbar{display:none}
+nav.secs a{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:6px 9px;border-radius:6px;border-bottom:none;white-space:nowrap}
+nav.secs a:hover{color:var(--ink);background:var(--panel-2)}
+nav.secs a.active{color:var(--accent-ink);background:var(--accent-soft)}
+.themebtn{font-family:var(--mono);font-size:11px;background:var(--panel);border:1px solid var(--line-strong);color:var(--muted);border-radius:6px;padding:6px 9px;cursor:pointer}
+.themebtn:hover{color:var(--ink);border-color:var(--accent)}
+.hero{padding:70px 0 46px;border-bottom:1px solid var(--line);
+  background:radial-gradient(120% 80% at 85% -20%,var(--accent-soft) 0%,transparent 60%)}
+.hero h1{font-size:clamp(30px,5vw,50px);letter-spacing:-.015em;max-width:20ch}
+.hero .lede{font-size:clamp(18px,2.1vw,21px);color:var(--ink-soft);margin-top:22px}
+.hero .who{margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+section{padding:56px 0;border-bottom:1px solid var(--line);scroll-margin-top:62px}
+.part-label{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px}
+h2.part{font-size:clamp(26px,3.6vw,38px);letter-spacing:-.015em;margin-bottom:6px}
+h3.sub{font-size:clamp(21px,2.6vw,26px);margin:44px 0 4px;letter-spacing:-.01em}
+h3.sub .n{font-family:var(--mono);font-size:15px;color:var(--accent);font-weight:600;margin-right:10px}
+h4.mini{font-size:18px;margin:26px 0 6px}
+.lead-in{color:var(--ink-soft);font-size:19px;margin:12px 0 8px}
+.box{border-radius:12px;padding:18px 22px;margin:22px 0;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow)}
+.box .bt{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.box.def{border-left:4px solid var(--teal)} .box.def .bt{color:var(--teal)}
+.box.plain{border-left:4px solid var(--teal);background:var(--teal-soft)} .box.plain .bt{color:var(--teal)}
+.box.take{border-left:4px solid var(--accent);background:var(--accent-soft)} .box.take .bt{color:var(--accent-ink)}
+.box.work{border-left:4px solid var(--muted);background:var(--panel-2)} .box.work .bt{color:var(--muted)}
+.box.warn{border-left:4px solid var(--danger);background:var(--danger-soft)} .box.warn .bt{color:var(--danger)}
+.box.good{border-left:4px solid var(--good);background:var(--good-soft)} .box.good .bt{color:var(--good)}
+.box p:last-child{margin-bottom:0}
+.box .term{font-family:var(--serif);font-weight:600;font-style:italic}
+.verdict{border:1px solid var(--accent);border-left:6px solid var(--accent);border-radius:14px;background:linear-gradient(135deg,var(--accent-soft),var(--panel) 72%);
+  padding:24px 26px;margin:26px 0;box-shadow:var(--shadow)}
+.verdict .vt{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink);font-weight:700;margin-bottom:10px}
+.verdict h4{font-size:22px;margin:0 0 10px}
+.verdict p:last-child{margin-bottom:0}
+.m{font-family:var(--serif);font-style:italic}
+sub{font-size:.72em} sup.p{font-size:.72em}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);margin:20px 0;background:var(--panel)}
+table.led{width:100%;border-collapse:collapse;font-size:15px;min-width:620px}
+table.led th{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:left;color:var(--muted);padding:12px 16px;border-bottom:1px solid var(--line-strong);font-weight:600}
+table.led td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+table.led tr:last-child td{border-bottom:none}
+table.led td:first-child{font-weight:600}
+.yes{color:var(--good);font-weight:700}.no{color:var(--danger);font-weight:700}.mid{color:var(--warn);font-weight:700}
+.tabnum{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.tag.need{color:var(--good);background:var(--good-soft)} .tag.nice{color:var(--warn);background:var(--accent-soft)} .tag.skip{color:var(--danger);background:var(--danger-soft)}
+ul.clean{list-style:none;padding:0;margin:14px 0}
+ul.clean li{display:grid;grid-template-columns:24px 1fr;gap:10px;margin-bottom:12px;align-items:start}
+ul.clean li .ic{font-family:var(--mono);font-weight:700;margin-top:1px}
+ul.clean.ok li .ic{color:var(--good)}ul.clean.no li .ic{color:var(--danger)}ul.clean.step li .ic{color:var(--accent-ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.phase{display:grid;grid-template-columns:92px 1fr;gap:18px;padding:15px 0;border-bottom:1px solid var(--line)}
+.phase:last-child{border-bottom:none}
+.phase .pw{font-family:var(--mono);font-size:12.5px;color:var(--accent-ink);font-weight:600}
+.phase .pw small{display:block;color:var(--faint);font-weight:400;font-size:11px}
+/* pipeline diagram */
+.pipe{display:flex;flex-direction:column;gap:0;margin:22px 0}
+.pipe .stage{display:grid;grid-template-columns:30px 1fr;gap:14px;align-items:start;position:relative;padding:0 0 20px}
+.pipe .stage:last-child{padding-bottom:0}
+.pipe .stage:not(:last-child):before{content:"";position:absolute;left:14px;top:30px;bottom:-2px;width:2px;background:var(--line-strong)}
+.pipe .dot{width:30px;height:30px;border-radius:50%;background:var(--accent-soft);border:2px solid var(--accent);color:var(--accent-ink);font-family:var(--mono);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:1}
+.pipe .sc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:var(--shadow)}
+.pipe .sc b{font-family:var(--serif);font-size:17px}
+.pipe .sc .d{font-size:14.5px;color:var(--ink-soft);margin-top:2px}
+.pipe .sc .comp{font-family:var(--mono);font-size:11px;color:var(--accent-ink);margin-top:6px;letter-spacing:.03em}
+/* loop diagram */
+.loopd{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;margin:22px 0;font-family:var(--mono);font-size:13px}
+.loopd .node{background:var(--panel);border:1px solid var(--line-strong);border-radius:999px;padding:8px 16px;box-shadow:var(--shadow);font-weight:600}
+.loopd .node.act{color:var(--accent-ink);border-color:var(--accent)}
+.loopd .arw{color:var(--faint);font-size:16px}
+.loopd .back{width:100%;text-align:center;color:var(--faint);font-size:12px;margin-top:2px}
+/* code */
+pre.code{background:var(--panel-2);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:16px 18px;margin:18px 0;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--ink-soft)}
+pre.code .c{color:var(--faint)}
+pre.code .k{color:var(--accent-ink);font-weight:600}
+/* calculator */
+.calc{display:grid;grid-template-columns:1.05fr 1fr;gap:24px;align-items:start;margin-top:8px}
+@media(max-width:820px){.calc{grid-template-columns:1fr}}
+.ctrl{margin-bottom:16px}
+.ctrl label{display:flex;justify-content:space-between;font-size:14px;color:var(--ink-soft);margin-bottom:6px}
+.ctrl label b{font-family:var(--mono);color:var(--accent-ink)}
+input[type=range]{width:100%;accent-color:var(--accent);height:4px}
+.readout{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow)}
+.ro{display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--line)}
+.ro:last-child{border-bottom:none}
+.ro .rk{font-size:13.5px;color:var(--muted)}
+.ro .rv{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.ro.big .rv{font-size:24px;color:var(--accent-ink)}
+.ro.big.danger .rv{color:var(--danger)}
+.ro .rv small{font-size:12px;color:var(--muted);font-weight:400}
+.bar-track{height:12px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);overflow:hidden;margin-top:14px}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--good),var(--warn) 78%,var(--danger));width:0;transition:width .15s ease}
+.refs{font-size:13.5px;color:var(--muted)}
+.refs p{margin:0 0 8px}.refs a{font-family:var(--mono);font-size:12px}
+.foot{padding:36px 0 72px;color:var(--faint);font-size:12.5px;font-family:var(--mono)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="bar">
+    <span class="brand">STUDY&nbsp;NOTES <b>/</b> the&nbsp;agent&nbsp;harness</span>
+    <nav class="secs" id="nav">
+      <a href="#orient">What it is</a>
+      <a href="#map">The whole harness</a>
+      <a href="#loop">1 · The loop</a>
+      <a href="#aci">2 · Tool interface</a>
+      <a href="#context">3 · Context</a>
+      <a href="#subagents">4 · Sub-agents</a>
+      <a href="#permissions">5 · Permissions</a>
+      <a href="#verify">6 · Verification</a>
+      <a href="#memory">7 · Memory</a>
+      <a href="#observe">8 · Observability</a>
+      <a href="#meta">The meta-harness</a>
+      <a href="#order">Build order</a>
+      <a href="#ledger">Honesty ledger</a>
+      <a href="#sources">Sources</a>
+    </nav>
+    <button class="themebtn" id="theme">◐ theme</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="eyebrow">A learning document, not a pitch</span>
+    <h1>The agent harness — how to build the machine around the model</h1>
+    <p class="lede">A model that can call tools is not yet an agent. The <b>harness</b> is the software system
+      that turns raw model calls into a reliable autonomous worker — the loop that keeps it going, the tool
+      interface it acts through, the context it reasons over, the sandbox that keeps it safe, and the tests that
+      tell you it actually worked. This is the general version — the machine behind Claude Code, OpenCode, SWE-agent
+      and their kin — component by component, each defined before it is used, every choice labelled
+      <em>build-this</em> or <em>skip-this</em>, and every borrowed term explained in plain English first.</p>
+    <p class="who">For Daniel · companion to the Hedge-Fund Harness notes · grounded in Claude Code, OpenCode, SWE-agent, OpenHands, Aider + the agent-scaffold literature · read top to bottom · ~40 min</p>
+  </div>
+</div>
+
+<!-- ================= ORIENT ================= -->
+<section id="orient">
+  <div class="wrap">
+    <div class="part-label">Start here · what "the agent harness" means</div>
+    <h2 class="part">The harness is the machine <em>around</em> the model</h2>
+    <p class="lead-in">A chat model answers one prompt. An <em>agent</em> pursues a goal across dozens of steps,
+      touching a real environment. Everything between "one model call" and "a trustworthy autonomous worker" is the
+      harness. Let's define it once, precisely, before building any of it.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the agent harness</div>
+      <p>An <span class="term">agent harness</span> (also called the <span class="term">scaffold</span> or the
+        <span class="term">agent-computer interface</span>) is <b>everything around the model weights that lets the
+        model act</b>: the loop that calls the model and runs what it asks; the <b>tools</b> it acts through; the
+        <b>context</b> assembled into each call; the <b>sandbox and permissions</b> that bound its power; the
+        <b>verification</b> that feeds real results back; and the <b>memory, tracing and evaluation</b> that make runs
+        durable and measurable. The model is the engine; the harness is the car, the road, the dashboard, and the
+        driving test.</p>
+    </div>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English</div>
+      <p>Imagine a brilliant new hire who can reason about anything but has no hands, no memory between meetings, and
+        no idea what's safe to touch. The harness gives them hands (tools), a desk with only the right papers on it
+        (context), a rule about which drawers need a manager's sign-off (permissions), a way to check their own work
+        before calling it done (verification), and a notebook that survives to tomorrow (memory). Same hire — but now
+        the work is <em>bankable</em>. Without the harness you just have a clever opinion that can't do anything and
+        can't be trusted when it tries.</p>
+    </div>
+
+    <div class="verdict">
+      <div class="vt">◆ The one line to remember</div>
+      <p><b>The interface beats the model.</b> The single most-cited finding in this whole area (SWE-agent, Princeton)
+        is that redesigning the <em>interface</em> a fixed model acts through moves its success rate more than most
+        model upgrades do — their edit-tool and linter guardrail swung SWE-bench resolve rate by 3–8 points with the
+        <em>same</em> weights. The corollary: agent capability you measure is always <em>harness × model</em>, never
+        the model alone. A weak harness makes a strong model look dumb, and a strong harness is where a small,
+        disciplined team can actually win.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">§</span>Workflow or agent? Don't reach for autonomy by default</h3>
+    <p>Anthropic's <em>Building Effective Agents</em> draws the line worth drawing first. A <b>workflow</b> is LLM
+      calls wired together on <em>predefined code paths</em> — you know the steps in advance. An <b>agent</b> is an
+      LLM that <em>dynamically directs its own tool use</em> in a loop, for problems where "it's difficult or
+      impossible to predict the required number of steps." Autonomy is a cost-and-risk knob, not a badge: use the
+      simplest thing that works, and only climb to a full loop when the task is genuinely open-ended.</p>
+
+    <div class="box warn">
+      <div class="bt">▸ The failure this prevents</div>
+      <p>The classic way an agent project dies: you wire up the exciting part (model + a big pile of tools + a loop)
+        first, watch a demo succeed once, and only later discover it loops forever on the second task, silently
+        "believes" it fixed a bug it never re-tested, floods its own context until it forgets the goal, or runs
+        <span class="mono">rm -rf</span> because nothing gated the shell. Every one of those is a <em>harness</em>
+        bug, not a model bug — and each has a component below whose whole job is to prevent it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MAP ================= -->
+<section id="map">
+  <div class="wrap">
+    <div class="part-label">The whole thing at a glance</div>
+    <h2 class="part">The harness, end to end</h2>
+    <p class="lead-in">Eight cross-cutting components wrap every single model call. Read this once so each later
+      section has a home. Unlike a data pipeline these don't run strictly in sequence — they surround the loop — but
+      this is the order in which a call actually touches them.</p>
+
+    <div class="pipe">
+      <div class="stage"><div class="dot">1</div><div class="sc"><b>The agent loop</b><div class="d">Call the model → run the tools it asked for → feed results back → repeat until it stops. Blends gather-context → act → verify, with an explicit stop condition.</div><div class="comp">component: the controller · §1</div></div></div>
+      <div class="stage"><div class="dot">2</div><div class="sc"><b>Tool / action interface (ACI)</b><div class="d">The verbs the agent can speak — read, edit, run, search. Named, scoped, error-messaged and budgeted <em>for a model</em>, not copied from a human API.</div><div class="comp">component: the ACI · §2</div></div></div>
+      <div class="stage"><div class="dot">3</div><div class="sc"><b>Context management</b><div class="d">What goes into each call. A finite attention budget: curate, retrieve just-in-time, and compact before it rots.</div><div class="comp">component: context engineering · §3</div></div></div>
+      <div class="stage"><div class="dot">4</div><div class="sc"><b>Sub-agents &amp; orchestration</b><div class="d">A lead agent spawns workers with isolated context for breadth-heavy work; each returns a distilled summary. Powerful and expensive.</div><div class="comp">component: orchestrator–workers · §4</div></div></div>
+      <div class="stage"><div class="dot">5</div><div class="sc"><b>Permissions &amp; sandboxing</b><div class="d">Least privilege by default. Side-effecting actions gated behind approval modes and allowlists; execution isolated in a container. — build EARLY</div><div class="comp">component: the safety cage · §5</div></div></div>
+      <div class="stage"><div class="dot">6</div><div class="sc"><b>Verification / feedback loop</b><div class="d">Wire actions to real ground truth — tests, linters, type-checkers — and force the agent to observe the effect before it moves on.</div><div class="comp">component: closing the loop · §6</div></div></div>
+      <div class="stage"><div class="dot">7</div><div class="sc"><b>Memory &amp; persistence</b><div class="d">Durable state outside the window: a scratchpad, project rules loaded every session, and resumable/forkable session logs.</div><div class="comp">component: memory · §7</div></div></div>
+      <div class="stage"><div class="dot">8</div><div class="sc"><b>Observability &amp; evaluation</b><div class="d">Trace every action + cost, and measure the <em>whole harness</em> on agentic benchmarks — not the base model on quizzes.</div><div class="comp">component: the instruments · §8</div></div></div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ How to read the diagram</div>
+      <p>At <b>run time</b> a call flows 1→8 and loops. But you <b>build</b> in a different order: the loop and a
+        couple of tools first so anything runs at all, then the <em>permission cage</em> (§5) and <em>verification</em>
+        (§6) <em>before</em> you widen autonomy — because those are what let you trust a longer leash. The "Build
+        order" section lays out the exact sequence. For now hold the shape in your head:
+        <em>loop → tools → context → (fan out) → gated by permissions → verified → remembered → measured.</em></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 1 · LOOP ================= -->
+<section id="loop">
+  <div class="wrap">
+    <div class="part-label">Component 1 · the controller</div>
+    <h2 class="part">The agent loop — think, act, observe, repeat</h2>
+    <p class="lead-in">The beating heart is almost embarrassingly simple: a <span class="mono">while</span> loop. Its
+      difficulty is entirely in the stop condition and in making sure every turn is anchored to reality.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the agent loop</div>
+      <p>The <span class="term">agent loop</span> is the controller that (1) calls the model, (2) executes whatever
+        tools the model requested, (3) appends the results to the conversation, and (4) calls the model again —
+        repeating until the model returns an answer with no tool calls, or a budget/stop condition fires. This is the
+        <span class="term">ReAct</span> pattern (Yao et al., 2022): interleave <em>reasoning</em> ("thought") with
+        <em>acting</em> (a tool call) and <em>observing</em> (the result) in one trajectory. Claude Code frames the
+        same three beats as <b>gather context → take action → verify results</b>, chained across dozens of steps.</p>
+    </div>
+
+    <div class="loopd">
+      <span class="node">gather context</span><span class="arw">→</span>
+      <span class="node act">call model (think)</span><span class="arw">→</span>
+      <span class="node act">run tool (act)</span><span class="arw">→</span>
+      <span class="node">read result (observe)</span><span class="arw">→</span>
+      <span class="node">verify / progress?</span>
+      <span class="back">└──────────  no answer yet → loop back to think  ──────────┘</span>
+    </div>
+
+    <pre class="code"><span class="c"># The entire agent, minus the cleverness</span>
+messages = [system_prompt, user_goal]
+<span class="k">while</span> True:
+    reply = model(messages, tools)          <span class="c"># think</span>
+    <span class="k">if</span> not reply.tool_calls:               <span class="c"># stop condition: model is done</span>
+        <span class="k">return</span> reply.text
+    <span class="k">for</span> call <span class="k">in</span> reply.tool_calls:          <span class="c"># act</span>
+        result = run(call)                  <span class="c"># ← real environment, ground truth</span>
+        messages.append(observation(result))<span class="c"># observe</span>
+    <span class="k">if</span> steps++ &gt; MAX or budget_exceeded(): <span class="c"># the OTHER stop condition</span>
+        <span class="k">return</span> escalate_to_human()</pre>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English — the one rule that makes it work</div>
+      <p>Every turn, the agent must <b>gain ground truth from the environment</b> — the actual tool result, the actual
+        test output — not its own guess about what happened. The loop is a feedback controller: it only converges if
+        it can see the error between "what I intended" and "what actually happened." An agent that acts and then
+        <em>assumes</em> success has opened the loop, and open loops drift.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Good</div>
+        <p>"Fix the failing tests" → run the suite → read the errors → search the source → edit → <b>re-run the
+          suite</b> → stop when green. A real stop condition (tests pass) and a budget cap with a human-escalation
+          exit if it stalls.</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Bad</div>
+        <p>A hardcoded 5-step pipeline for an open-ended task (too rigid), or a loop with no environment feedback where
+          the model declares victory without re-running anything (never converges), or no cap at all (runaway cost,
+          "compounding errors").</p>
+      </div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ Design rule</div>
+      <p>Give the loop <b>two</b> stop conditions: a <em>success</em> condition read from the environment (tests green,
+        goal state reached) and a <em>safety</em> condition (max steps / token budget / wall-clock) that escalates to
+        a human instead of spinning. And prefer a workflow over a loop whenever you can actually predict the steps —
+        the loop is for when you can't.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 2 · ACI ================= -->
+<section id="aci">
+  <div class="wrap">
+    <div class="part-label">Component 2 · the interface — the load-bearing one</div>
+    <h2 class="part">The tool interface — the verbs you hand the model</h2>
+    <p class="lead-in">If you get one component right, make it this one. The evidence that interface design beats
+      model size is the strongest single result in the field.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the Agent-Computer Interface (ACI)</div>
+      <p>The <span class="term">ACI</span> (SWE-agent, Princeton, NeurIPS 2024) is the purpose-built set of commands
+        and feedback a model acts through — the agent's equivalent of a human's GUI. The thesis: <b>LLM agents are a
+        new category of end user</b>, and just as a good UI makes a person more capable without making them smarter, a
+        good ACI makes a fixed model dramatically more capable. Design tools <em>for the model</em>: few and
+        high-impact, clearly named, returning readable context, with actionable errors and a token budget.</p>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ The numbers — interface moves the score at fixed model</div>
+      <p>SWE-agent's ablation on SWE-bench Lite (same model throughout) is the receipt everyone cites:</p>
+      <div class="tblwrap">
+        <table class="led">
+          <thead><tr><th>Configuration</th><th>Resolve rate</th><th>Δ</th></tr></thead>
+          <tbody>
+            <tr><td>Full ACI</td><td class="tabnum">18.0%</td><td class="dim">—</td></tr>
+            <tr><td>Remove the edit-linter guardrail</td><td class="tabnum">15.0%</td><td class="no">−3.0</td></tr>
+            <tr><td>Full-file view instead of a 100-line window</td><td class="tabnum">12.7%</td><td class="no">−5.3</td></tr>
+            <tr><td>Shrink viewer window 100 → 30 lines</td><td class="tabnum">14.3%</td><td class="no">−3.7</td></tr>
+            <tr><td>Remove the custom edit tool (raw editing)</td><td class="tabnum">10.3%</td><td class="no">−7.7</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A <b>7.7-point</b> swing from the edit tool alone — larger than many model upgrades — with the weights held
+        fixed. Aider's parallel result: switching GPT-4 Turbo to a rigid <em>unified-diff</em> edit format cut "lazy
+        coding" ~3× and lifted its benchmark from <b>20% → 61%</b>.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">2.1</span>The five rules of a good tool</h3>
+    <ul class="clean ok">
+      <li><span class="ic">✓</span><b>Few, high-impact, consolidated — not thin API wrappers.</b> One <span class="mono">search_contacts</span> beats making the agent chain <span class="mono">list_users</span> → <span class="mono">list_events</span> → <span class="mono">filter</span> and burn context doing your join for you.</li>
+      <li><span class="ic">✓</span><b>Namespace them.</b> <span class="mono">asana_search</span>, <span class="mono">gdrive_search</span> — so related tools cluster and the model picks the right one.</li>
+      <li><span class="ic">✓</span><b>Return meaning, not opaque IDs.</b> Give back "Jane Smith / #eng-team", not a raw UUID. Anthropic found resolving UUIDs to human-readable names "significantly improves precision."</li>
+      <li><span class="ic">✓</span><b>Make errors actionable.</b> "File not found — did you mean <span class="mono">src/app.py</span>? Use an absolute path." not a bare stack trace. The error message is a prompt back to the model.</li>
+      <li><span class="ic">✓</span><b>Budget the output.</b> Claude Code caps a single tool response at ~<b>25,000 tokens</b> by default — a huge <span class="mono">grep</span> gets truncated with a note, not allowed to blow the window.</li>
+    </ul>
+
+    <div class="box plain">
+      <div class="bt">▸ Poka-yoke — make mistakes impossible, don't just warn against them</div>
+      <p>The Japanese manufacturing term for "mistake-proofing." If the agent keeps passing relative paths that break,
+        don't add a warning to the docstring — change the tool signature to <em>require an absolute path</em> so the
+        wrong call can't be expressed. Anthropic fixed a whole class of pathing errors this way. The best tool
+        interface makes the correct action the only representable one.</p>
+    </div>
+
+    <div class="box warn">
+      <div class="bt">▸ The failure this prevents</div>
+      <p>Too many overlapping tools "distract agents from pursuing efficient strategies"; opaque IDs and cryptic
+        tracebacks cause failed retrievals and unrecoverable loops; whole-file edits invite lazy "// rest unchanged"
+        rewrites. Anthropic reports that <em>small refinements to tool descriptions alone</em> pushed Sonnet to
+        state-of-the-art on SWE-bench Verified — this is the highest-leverage tuning surface in the harness.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 3 · CONTEXT ================= -->
+<section id="context">
+  <div class="wrap">
+    <div class="part-label">Component 3 · what the model sees</div>
+    <h2 class="part">Context management — the finite attention budget</h2>
+    <p class="lead-in">The context window is not free storage you fill up. It is a budget that <em>degrades as it
+      fills</em>, and managing it well is most of what separates a coherent long run from a confused one.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — context engineering &amp; context rot</div>
+      <p><span class="term">Context engineering</span> (Anthropic) is choosing the smallest set of high-signal tokens
+        to put in each call. Its central hazard is <span class="term">context rot</span>: "as the number of tokens in
+        the context window increases, the model's ability to accurately recall information decreases." A related, older
+        finding is <span class="term">lost in the middle</span> (Liu et al., 2023): models use information best at the
+        <em>start or end</em> of the context and degrade sharply when it sits in the middle — even in long-context
+        models. A bigger window does <em>not</em> buy uniform recall.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">3.1</span>The four levers, lightest touch first</h3>
+    <ul class="clean step">
+      <li><span class="ic">1</span><b>Clear old tool outputs.</b> The cheapest win — a 40k-token file dump from step 3 is dead weight by step 20. Drop it first.</li>
+      <li><span class="ic">2</span><b>Compact / summarize.</b> Near the limit, summarize the conversation so far — preserving "architectural decisions, unresolved bugs, and implementation details" — and reinitialize on the summary. Claude Code does this automatically (<span class="mono">/compact</span>).</li>
+      <li><span class="ic">3</span><b>Retrieve just-in-time.</b> Hold lightweight identifiers (file paths, queries, links) and fetch the content only when needed, instead of pre-loading everything up front.</li>
+      <li><span class="ic">4</span><b>Offload to memory.</b> Write durable state to a notes file <em>outside</em> the window (see §7), so the window stays a working set, not an archive.</li>
+    </ul>
+
+    <div class="box work">
+      <div class="bt">▸ Try it — the context-budget simulator</div>
+      <p>A long run adds tokens every step. Watch the window fill, compaction trigger, and effective recall rot. This
+        is a teaching heuristic, not a real model — but the shape is real.</p>
+      <div class="calc">
+        <div>
+          <div class="ctrl"><label>Context window <b id="v_w">200k</b></label><input type="range" id="s_w" min="50" max="1000" step="25" value="200"></div>
+          <div class="ctrl"><label>Tokens added per step (tool outputs) <b id="v_t">12k</b></label><input type="range" id="s_t" min="1" max="40" step="1" value="12"></div>
+          <div class="ctrl"><label>Steps in the run <b id="v_s">40</b></label><input type="range" id="s_s" min="1" max="120" step="1" value="40"></div>
+          <div class="bar-track"><div class="bar-fill" id="fill"></div></div>
+        </div>
+        <div class="readout">
+          <div class="ro"><span class="rk">Raw tokens produced</span><span class="rv" id="o_raw">—</span></div>
+          <div class="ro"><span class="rk">Window fill (no compaction)</span><span class="rv" id="o_fill">—</span></div>
+          <div class="ro"><span class="rk">Compactions triggered</span><span class="rv" id="o_comp">—</span></div>
+          <div class="ro big"><span class="rk">Effective recall</span><span class="rv" id="o_recall">—</span></div>
+          <div class="ro"><span class="rk">Verdict</span><span class="rv" id="o_verdict" style="font-size:15px">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Good</div>
+        <p>Persistent rules live in a <span class="mono">CLAUDE.md</span> file (reloaded every call), not in fragile
+          chat history. MCP tool definitions load <em>on demand</em> so only names cost tokens until used. Critical
+          instructions sit at the <em>edges</em> of the prompt where recall is best.</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Bad</div>
+        <p>Dumping a whole repo or a 200k-token file into the prompt up front. The window refills the instant it's
+          summarized — "compaction thrash" — and the agent forgets the goal it was given in the middle of a wall of
+          retrieved text.</p>
+      </div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ System-prompt altitude</div>
+      <p>Anthropic's "Goldilocks" rule: a system prompt should be neither brittle hardcoded logic nor vague
+        hand-waving, but "specific enough to guide behavior, flexible enough to give strong heuristics," organized
+        with clear section headers. Start minimal; add a rule only when you've <em>seen</em> the failure it fixes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4 · SUBAGENTS ================= -->
+<section id="subagents">
+  <div class="wrap">
+    <div class="part-label">Component 4 · scaling out — carefully</div>
+    <h2 class="part">Sub-agents &amp; orchestration — power at 15× the cost</h2>
+    <p class="lead-in">One agent, one context window. When a task is too broad for one window, you fan out — but this
+      is the most expensive lever in the harness, and it helps only for the right shape of work.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — orchestrator–workers</div>
+      <p>In the <span class="term">orchestrator–workers</span> pattern (Anthropic), a <b>lead agent</b> decomposes the
+        task and spawns <b>sub-agents</b>, each in its <em>own isolated context window</em>, each returning only a
+        "condensed, distilled summary" (~1–2k tokens) rather than its full transcript. The point is <b>context
+        isolation</b>: five parallel explorations don't pollute the lead's window; it sees five clean summaries. The
+        subtasks are decided by the orchestrator at run time, not predefined.</p>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ The numbers — worth it, but only sometimes</div>
+      <p>From Anthropic's multi-agent research system:</p>
+      <ul class="clean ok" style="margin-top:6px">
+        <li><span class="ic">✓</span>A lead + sub-agents beat a single agent by <b>90.2%</b> on their research eval.</li>
+        <li><span class="ic">✕</span>It burned <b>~15× the tokens</b> of a plain chat.</li>
+        <li><span class="ic">✓</span>Token usage alone explained <b>~80%</b> of the performance variance — much of the win is just "more tokens spent searching in parallel."</li>
+      </ul>
+    </div>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Fan out when…</div>
+        <p>The work is <b>broad and parallelizable</b> and each strand is independent: researching many sources,
+          searching a large codebase from several angles, reviewing a diff along several dimensions at once. Isolation
+          helps and the strands don't need each other's intermediate state.</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Stay single-agent when…</div>
+        <p>The work is <b>tightly interdependent</b> — most coding, where edit B depends on what edit A just did.
+          Anthropic is explicit: multi-agent is "less effective for tightly interdependent tasks such as coding."
+          Fanning those out means agents step on each other and you pay 15× for a worse result.</p>
+      </div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ Design rule</div>
+      <p>Reach for sub-agents only when <em>outcome value dominates token cost</em> and the task decomposes into
+        independent, breadth-heavy strands. Keep each worker's return small (a summary, not a transcript), and never
+        fan out interdependent edits. Autonomy scales cost super-linearly — spend it where isolation actually buys
+        you something.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 · PERMISSIONS ================= -->
+<section id="permissions">
+  <div class="wrap">
+    <div class="part-label">Component 5 · the safety cage · build EARLY</div>
+    <h2 class="part">Permissions &amp; sandboxing — least privilege by default</h2>
+    <p class="lead-in">The moment an agent can run a shell command, it can also delete your work or leak your secrets.
+      This component is what lets you widen the leash later without dread — so it comes early, not last.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the safety cage</div>
+      <p>Two layers. <span class="term">Permissions</span> decide <em>which actions need a human's sign-off</em>:
+        side-effecting or irreversible actions (writes, shell, network, deploys) are gated behind approval modes and
+        allowlists, with least privilege as the default. <span class="term">Sandboxing</span> decides <em>where code
+        runs</em>: inside an isolated container/VM with scoped filesystem and network access, so arbitrary code can't
+        harm the host. Permissions bound <em>intent</em>; the sandbox bounds <em>blast radius</em>.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">5.1</span>Permission modes — a graduated leash</h3>
+    <p>Claude Code's four modes (cycled with Shift+Tab) are a clean template for graduated autonomy:</p>
+    <div class="tblwrap">
+      <table class="led">
+        <thead><tr><th>Mode</th><th>What it allows</th><th>Use when</th></tr></thead>
+        <tbody>
+          <tr><td>Plan</td><td>Read-only exploration; no source edits at all</td><td>Understanding a codebase before touching it</td></tr>
+          <tr><td>Manual</td><td>Ask before every edit and every shell command</td><td>Unfamiliar or high-stakes territory</td></tr>
+          <tr><td>Accept edits</td><td>Auto-approve file writes + benign fs commands; still ask for the rest</td><td>A trusted, well-scoped task in progress</td></tr>
+          <tr><td>Auto</td><td>A lightweight classifier LLM reviews each action and blocks risky ones in the background</td><td>Long autonomous runs where prompting on every step is impractical</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Trusted commands (<span class="mono">npm test</span>, <span class="mono">git status</span>) go on an
+      <b>allowlist</b> in settings, scoped org → project → personal, so the routine stuff stops asking while the
+      dangerous stuff still gates.</p>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Good</div>
+        <p>Every action runs in a per-session Docker sandbox (OpenHands does exactly this — arbitrary code "can be run
+          safely without risking the host"). Reversible edits get a <b>checkpoint</b> before each write so the human
+          can rewind; irreversible actions (DB writes, deploys, external APIs) always require explicit approval.</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Bad</div>
+        <p>Full auto-approve (<span class="mono">bypassPermissions</span>) on a machine with production credentials and
+          no sandbox. One prompt-injection in a fetched web page or a mis-parsed instruction and the agent runs
+          <span class="mono">rm -rf</span> or exfiltrates a token — with nothing between intent and damage.</p>
+      </div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ Design rule — and its honest limit</div>
+      <p>Default to least privilege and make the safe path the easy one (allowlists beat approval fatigue; a background
+        classifier beats a blanket "yes"). But note the boundary: checkpoints can rewind <em>local files</em> — they
+        <b>cannot</b> un-send an email or un-drop a table. Route anything with an external, irreversible effect through
+        stricter, explicit human approval, always.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 6 · VERIFY ================= -->
+<section id="verify">
+  <div class="wrap">
+    <div class="part-label">Component 6 · closing the loop</div>
+    <h2 class="part">Verification — wire actions to ground truth</h2>
+    <p class="lead-in">This is the component that turns §1's open loop into a closed one. Without it the agent is
+      guessing whether it succeeded; with it, the environment tells it — and rejects bad actions before they land.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the feedback loop</div>
+      <p><span class="term">Verification</span> connects the agent's actions to real environment signals — tests,
+        linters, type-checkers, compilers — and <b>forces the agent to observe the result</b> before proceeding. The
+        strongest form is a <span class="term">guardrail</span> that rejects a bad action <em>at the interface</em>
+        rather than letting it commit and cascade. A close cousin is the <span class="term">evaluator–optimizer</span>
+        loop (Anthropic): one model call generates, another critiques against explicit criteria, and it iterates —
+        worth it "when we have clear evaluation criteria and iterative refinement provides measurable value."</p>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ The exemplar — SWE-agent's pre-apply linter</div>
+      <p>When the agent edits a file, the edit tool runs a linter <em>before</em> the change is written:
+        "Python files will be checked for syntax errors after the edit. If an error is found, the edit will not be
+        executed" — and the tool shows the error, the proposed change, and the original so the agent can recover. That
+        one guardrail is worth <b>3 points</b> of resolve rate (18.0% → 15.0% without it). The action is rejected at
+        the interface; the broken state never exists.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Good</div>
+        <p>Edit → type-checker/linter runs → agent reads any error and fixes it → tests run → agent reads the result →
+          only then declares done. Reflexion-style (Shinn et al.): on failure, the agent writes a short natural-language
+          self-critique and retries with it in context.</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Bad</div>
+        <p>Apply a diff blind and move on. The build breaks and the agent never learns — it carries a false "done" into
+          the next step, and the error compounds. "It looks right" is not verification; running it is.</p>
+      </div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ Design rule</div>
+      <p>Prefer guardrails that make a bad action <em>impossible to commit</em> over post-hoc detection. Every action
+        the agent takes should produce an observable, machine-checkable signal — and the loop should be structured so
+        the agent <em>must</em> read that signal before its next move. A harness with no verification is a very
+        expensive way to generate confident wrong answers.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 7 · MEMORY ================= -->
+<section id="memory">
+  <div class="wrap">
+    <div class="part-label">Component 7 · durable state</div>
+    <h2 class="part">Memory &amp; persistence — a notebook that survives the window</h2>
+    <p class="lead-in">Context (§3) is working memory and it gets wiped by compaction. Real long-horizon work needs
+      state that outlives any single window — and runs you can reproduce, resume, and fork.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — memory, three tiers</div>
+      <p><span class="term">Scratchpad / notes</span>: files the agent writes to and reads back, "persisted to memory
+        outside of the context window," enabling strategies impossible when everything must fit in one window.
+        <span class="term">Project memory</span>: instructions and conventions loaded into <em>every</em> session (a
+        <span class="mono">CLAUDE.md</span> / rules file). <span class="term">Session persistence</span>: an
+        append-only log of the run so it can be resumed, forked, and reproduced. The reference architecture for
+        long-term recall is Generative Agents' <span class="term">memory stream</span> — store timestamped
+        observations, retrieve by recency × importance × relevance, periodically reflect into higher-level notes.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Good</div>
+        <p>Durable rules live in <span class="mono">CLAUDE.md</span> (loaded into every system prompt), not in chat
+          that compaction will drop. Sessions are written to JSONL so <span class="mono">--continue</span>,
+          <span class="mono">--resume</span> and <span class="mono">--fork-session</span> work. OpenHands makes an
+          <b>append-only event log</b> <em>the</em> state — "what the agent perceives is a fold over that log" — so
+          every run is exactly reproducible.</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Bad</div>
+        <p>Relying on conversation history for anything that must persist. Claude Code warns early instructions "can
+          get lost" in compaction — so a rule you stated once in turn 2 is gone by turn 40. Durable facts belong in a
+          file, not in the transcript.</p>
+      </div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ Design rule</div>
+      <p>Anything that must survive a compaction or a restart lives <b>on disk</b>, not in context. Make the log the
+        source of truth (state = a fold over events) and you get reproducibility, resume, and fork for free — the same
+        discipline that makes a backtest trustworthy makes an agent run trustworthy.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 8 · OBSERVE ================= -->
+<section id="observe">
+  <div class="wrap">
+    <div class="part-label">Component 8 · the instruments</div>
+    <h2 class="part">Observability &amp; evaluation — measure the harness, not the model</h2>
+    <p class="lead-in">You cannot improve what you cannot see, and you cannot trust a number that measured the wrong
+      thing. This component makes every run legible and grades the <em>whole</em> harness honestly.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — traces &amp; agentic evals</div>
+      <p><span class="term">Observability</span>: every action and observation is logged, with accumulated tokens and
+        cost, so a run can be audited step by step (OpenHands' typed event stream <em>is</em> this — the audit log is
+        the state). <span class="term">Agentic evaluation</span>: grading the harness on tasks that require the loop,
+        tools and environment end-to-end — <em>not</em> the base model on multiple-choice quizzes, which miss
+        everything the harness does.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">8.1</span>The benchmarks worth knowing</h3>
+    <div class="tblwrap">
+      <table class="led">
+        <thead><tr><th>Benchmark</th><th>What it measures</th><th>Why the harness shows up</th></tr></thead>
+        <tbody>
+          <tr><td>SWE-bench (+ Verified)</td><td>Resolve real GitHub issues; hidden tests must pass</td><td>Needs repo nav, long context, running tests — all mediated by the ACI</td></tr>
+          <tr><td>Terminal-Bench</td><td>End-to-end tasks in a containerized terminal</td><td>Pure agency: the loop, tools and error recovery dominate</td></tr>
+          <tr><td>GAIA</td><td>Real-world assistant Qs (browsing, tools, multimodal)</td><td>Scores hinge on the browsing/tool orchestration</td></tr>
+          <tr><td>WebArena</td><td>Long-horizon tasks on realistic self-hosted sites</td><td>Observation/action interface and recovery are decisive</td></tr>
+          <tr><td>τ-bench</td><td>Talk to a simulated user + follow a policy doc via APIs</td><td>Reliability across trials (<span class="mono">pass^k</span>) is a scaffold property</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ Track tokens as a first-class metric</div>
+      <p>Because token usage explained ~80% of performance variance in Anthropic's multi-agent evals, cost is not just
+        a budget line — it's a <em>capability signal</em>. Log tokens per run alongside success rate, or you'll ship a
+        harness that "improved" only by quietly spending 15× more.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="box good">
+        <div class="bt">▸ Good</div>
+        <p>A trace per run (actions, observations, cost); the harness graded on SWE-bench Verified / Terminal-Bench
+          with resolve@1 reported honestly; and per-component eval — Anthropic even lets agents "analyze your results
+          and improve your tools for you."</p>
+      </div>
+      <div class="box warn">
+        <div class="bt">▸ Bad</div>
+        <p>Grading the base model on a knowledge quiz and inferring agent capability. SWE-agent showed the interface
+          alone moves resolve rate 3–8 points at fixed model — a static eval attributes harness bugs to the model and
+          misses every real regression.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= META ================= -->
+<section id="meta">
+  <div class="wrap">
+    <div class="part-label">The frontier · the harness that designs itself</div>
+    <h2 class="part">The meta-harness — treating the scaffold as a searchable artifact</h2>
+    <p class="lead-in">Everything above is hand-authored. A research lineage asks the next question: if the scaffold
+      matters this much, why design it by hand at all?</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — automated design of agentic systems</div>
+      <p>The insight behind <span class="term">ADAS</span> (Hu, Lu &amp; Clune, 2024): if agents are defined
+        <em>in code</em> — prompts, tool wiring, control flow — then the harness itself is a <b>searchable design
+        space</b>, not a fixed thing you author once. Their <em>Meta Agent Search</em> has a meta-agent program new
+        agents against a growing archive of prior designs; the invented scaffolds beat hand-designed ones and transfer
+        across domains and models.</p>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ The lineage — search → self-edit → evolve</div>
+      <ul class="clean step" style="margin-top:6px">
+        <li><span class="ic">›</span><b>ADAS / Meta Agent Search</b> (arXiv:2408.08435) — search over agents-as-code; discovered scaffolds beat hand-built ones.</li>
+        <li><span class="ic">›</span><b>Gödel Agent</b> (arXiv:2410.04444) — an agent that reads and rewrites <em>its own code</em> at runtime toward a high-level objective. The purest "meta harness" — and a research prototype, not production.</li>
+        <li><span class="ic">›</span><b>Darwin-Gödel Machine</b> (arXiv:2505.22954) — self-modifies and <em>empirically validates each change on a benchmark</em>; self-improved from 20.0% → 50.0% on SWE-bench. Verification (§6) becomes the engine of self-improvement.</li>
+      </ul>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ Why this belongs in a harness doc</div>
+      <p>Two reasons. First, it is the strongest evidence for this document's thesis — DGM's 20%→50% swing came
+        <em>entirely</em> from changing the scaffold, model fixed. Second, it clarifies the goal: a great harness is
+        not a pile of features but a <em>design space</em> you can measure and move through. You may build it by hand
+        for years — but knowing it's searchable changes how you build it: instrument everything (§8), and every
+        component becomes a knob you can tune with evidence instead of taste.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUILD ORDER ================= -->
+<section id="order">
+  <div class="wrap">
+    <div class="part-label">Putting it together</div>
+    <h2 class="part">Build order — a runnable spine before a wide leash</h2>
+    <p class="lead-in">Run-time order (§1→§8) is not build order. Build the parts that let you <em>trust and observe</em>
+      an agent before the parts that make it powerful. Here's a sensible sequence.</p>
+
+    <div class="box">
+      <div class="phase"><div class="pw">Step 1<small>days</small></div><div><b>Loop + 2–3 tools + a sandbox.</b> The <span class="mono">while</span> loop (§1), a read tool, an edit tool and a run-command tool (§2) — all executing inside a container (§5) from the very first line. Never run a tool loop un-sandboxed, even in a prototype.</div></div>
+      <div class="phase"><div class="pw">Step 2<small>days</small></div><div><b>Verification + tracing.</b> Wire tests/linter feedback into the loop (§6) and log every action with its cost (§8). Now you can <em>see</em> what the agent does and whether it worked — before you trust it with anything.</div></div>
+      <div class="phase"><div class="pw">Step 3<small>week</small></div><div><b>Permission modes + the ACI polish.</b> Add graduated permission modes and an allowlist (§5), then invest hard in tool ergonomics (§2) — names, readable returns, actionable errors, output budgets. This is where the biggest score gains hide.</div></div>
+      <div class="phase"><div class="pw">Step 4<small>week</small></div><div><b>Context management + memory.</b> Add compaction, just-in-time retrieval (§3) and a <span class="mono">CLAUDE.md</span> + session log (§7). This is what turns a 10-step demo into a 100-step worker.</div></div>
+      <div class="phase"><div class="pw">Step 5<small>ongoing</small></div><div><b>Benchmark, then (maybe) fan out.</b> Grade the whole harness on SWE-bench Verified / Terminal-Bench (§8). Only once a single agent is solid and measured do you add sub-agents (§4) — and only for breadth-heavy work worth 15× the tokens.</div></div>
+    </div>
+
+    <div class="verdict">
+      <div class="vt">◆ The ordering principle</div>
+      <p><b>Observability and safety before autonomy.</b> Verification, tracing and the permission cage come <em>before</em>
+        you widen the leash, because they're what let you extend it without fear. A powerful agent you can't observe or
+        contain is a liability; a modest one you can trust and measure is a foundation you can keep building on. Same
+        lesson as any serious research system: the discipline is the moat, not the raw capability.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= LEDGER ================= -->
+<section id="ledger">
+  <div class="wrap">
+    <div class="part-label">Intellectual honesty</div>
+    <h2 class="part">Honesty ledger — established vs. choice vs. open</h2>
+    <p class="lead-in">Not everything here is equally settled. This table separates what the evidence supports, what is
+      a defensible design choice, and what is still genuinely open.</p>
+
+    <div class="tblwrap">
+      <table class="led">
+        <thead><tr><th>Claim</th><th>Status</th><th>Basis / caveat</th></tr></thead>
+        <tbody>
+          <tr><td>Interface design can beat model size at fixed weights</td><td><span class="tag need">established</span></td><td>SWE-agent ablations (3–8 pt swings); Aider unified-diffs 20%→61%</td></tr>
+          <tr><td>Context degrades as the window fills ("context rot" / lost-in-the-middle)</td><td><span class="tag need">established</span></td><td>Liu et al. 2023; Anthropic context-engineering post</td></tr>
+          <tr><td>Multi-agent ≈ 15× tokens; tokens explain ~80% of variance</td><td><span class="tag need">established</span></td><td>Anthropic multi-agent report — but on <em>their</em> research eval; may not generalize</td></tr>
+          <tr><td>The four permission modes are the right taxonomy</td><td><span class="tag nice">design choice</span></td><td>Claude Code's scheme — sensible and battle-tested, not a law of nature</td></tr>
+          <tr><td>Eight components is the right decomposition</td><td><span class="tag nice">design choice</span></td><td>A teaching cut; real systems blur and merge these boundaries</td></tr>
+          <tr><td>The context-budget simulator's recall curve</td><td><span class="tag skip">illustrative</span></td><td>A hand-drawn heuristic to build intuition — <em>not</em> a measured model curve</td></tr>
+          <tr><td>Self-designing harnesses (Gödel Agent, DGM) are production-ready</td><td><span class="tag skip">open</span></td><td>Research prototypes; impressive benchmarks, real safety/reliability questions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SOURCES ================= -->
+<section id="sources">
+  <div class="wrap">
+    <div class="part-label">Where the borrowed terms come from</div>
+    <h2 class="part">Sources</h2>
+    <div class="refs">
+      <p><b>Production harnesses &amp; engineering writing.</b></p>
+      <p>Anthropic — <a href="https://www.anthropic.com/research/building-effective-agents">Building Effective Agents</a> · <a href="https://www.anthropic.com/engineering/writing-tools-for-agents">Writing effective tools for agents</a> · <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Effective context engineering for AI agents</a> · <a href="https://www.anthropic.com/engineering/multi-agent-research-system">How we built our multi-agent research system</a></p>
+      <p>Claude Code — <a href="https://code.claude.com/docs/en/how-claude-code-works">How Claude Code works</a> · <a href="https://code.claude.com/docs/en/permissions">Permissions</a> · <a href="https://code.claude.com/docs/en/memory">Memory</a></p>
+      <p>OpenCode (SST) — <a href="https://opencode.ai">opencode.ai</a> · <a href="https://deepwiki.com/sst/opencode">architecture</a>. OpenHands — <a href="https://arxiv.org/abs/2407.16741">arXiv:2407.16741</a> · <a href="https://docs.openhands.dev/openhands/usage/architecture/runtime">runtime docs</a>. Aider — <a href="https://aider.chat/docs/unified-diffs.html">unified diffs</a> · <a href="https://aider.chat/docs/repomap.html">repo map</a>.</p>
+      <p><b>Papers.</b> SWE-agent / ACI — <a href="https://arxiv.org/abs/2405.15793">arXiv:2405.15793</a>. ReAct — <a href="https://arxiv.org/abs/2210.03629">arXiv:2210.03629</a>. Reflexion — <a href="https://arxiv.org/abs/2303.11366">arXiv:2303.11366</a>. Self-Refine — <a href="https://arxiv.org/abs/2303.17651">arXiv:2303.17651</a>. Voyager (skill library) — <a href="https://arxiv.org/abs/2305.16291">arXiv:2305.16291</a>. Generative Agents (memory stream) — <a href="https://arxiv.org/abs/2304.03442">arXiv:2304.03442</a>. Lost in the Middle — <a href="https://arxiv.org/abs/2307.03172">arXiv:2307.03172</a>. MemGPT / Letta — <a href="https://arxiv.org/abs/2310.08560">arXiv:2310.08560</a>.</p>
+      <p><b>Evaluation.</b> SWE-bench — <a href="https://arxiv.org/abs/2310.06770">arXiv:2310.06770</a> · <a href="https://www.swebench.com">swebench.com</a>. Terminal-Bench — <a href="https://tbench.ai">tbench.ai</a> (project). GAIA — <a href="https://arxiv.org/abs/2311.12983">arXiv:2311.12983</a>. WebArena — <a href="https://arxiv.org/abs/2307.13854">arXiv:2307.13854</a>. τ-bench — <a href="https://arxiv.org/abs/2406.12045">arXiv:2406.12045</a>. AgentBench — <a href="https://arxiv.org/abs/2308.03688">arXiv:2308.03688</a>.</p>
+      <p><b>The meta-harness.</b> ADAS / Meta Agent Search — <a href="https://arxiv.org/abs/2408.08435">arXiv:2408.08435</a>. Gödel Agent — <a href="https://arxiv.org/abs/2410.04444">arXiv:2410.04444</a>. Darwin-Gödel Machine — <a href="https://arxiv.org/abs/2505.22954">arXiv:2505.22954</a>. METR autonomy evals — <a href="https://metr.org">metr.org</a>.</p>
+      <p class="dim" style="margin-top:14px">Note: Anthropic/METR items are engineering posts and eval reports, not peer-reviewed papers — cited as best-practice primary sources. Terminal-Bench is a benchmark project, not an arXiv paper.</p>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  <div class="wrap">
+    STUDY NOTES / the agent harness · companion to the Hedge-Fund Harness notes · a learning document, not a pitch
+  </div>
+</div>
+
+<script>
+/* theme toggle */
+(function(){var b=document.getElementById('theme');function cur(){return document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}
+b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);});})();
+/* scroll-spy */
+(function(){var links=[].slice.call(document.querySelectorAll('nav.secs a'));var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+var obs=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(a){a.classList.remove('active');});var a=map[e.target.id];if(a){a.classList.add('active');a.scrollIntoView({block:'nearest',inline:'center'});}}});},{rootMargin:'-45% 0px -50% 0px'});
+document.querySelectorAll('section[id]').forEach(function(s){obs.observe(s);});})();
+/* context-budget simulator */
+(function(){var sw=document.getElementById('s_w'),st=document.getElementById('s_t'),ss=document.getElementById('s_s');
+if(!sw)return;
+var vw=document.getElementById('v_w'),vt=document.getElementById('v_t'),vs=document.getElementById('v_s');
+var oraw=document.getElementById('o_raw'),ofill=document.getElementById('o_fill'),ocomp=document.getElementById('o_comp'),orecall=document.getElementById('o_recall'),over=document.getElementById('o_verdict'),fill=document.getElementById('fill');
+function fmt(k){if(k>=1000)return (k/1000).toFixed(2)+'M';return Math.round(k)+'k';}
+function calc(){var w=+sw.value,t=+st.value,s=+ss.value; /* all in k tokens */
+vw.textContent=fmt(w);vt.textContent=t+'k';vs.textContent=s;
+var raw=t*s;
+var fillpct=raw/w*100;
+var comp=Math.max(0,Math.floor(raw/(0.8*w))); /* compact each time we cross 80% */
+/* effective recall: healthy until ~50% full, rots toward the tail (context rot heuristic) */
+var effFill=Math.min(fillpct,100);
+var recall=Math.round(100/(1+Math.pow(effFill/55,3)));
+oraw.textContent=fmt(raw);
+ofill.innerHTML=fillpct.toFixed(0)+'<small>%</small>';
+ocomp.textContent=comp;
+orecall.innerHTML=recall+'<small>%</small>';
+fill.style.width=Math.min(fillpct,100)+'%';
+var big=orecall.closest('.ro');
+if(recall>=80){over.textContent='healthy — window is a working set';over.style.color='var(--good)';big.classList.remove('danger');}
+else if(recall>=45){over.textContent='rotting — start compacting + retrieving';over.style.color='var(--warn)';big.classList.remove('danger');}
+else{over.textContent='thrashing — offload to memory (§7)';over.style.color='var(--danger)';big.classList.add('danger');}
+}
+[sw,st,ss].forEach(function(n){n.addEventListener('input',calc);});calc();})();
+</script>
+</body>
+</html>

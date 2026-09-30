@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Study Notes — Building the Harness</title>
+<style>
+:root{
+  --ground:#f5f4f0; --panel:#ffffff; --panel-2:#f6f5f1; --ink:#1a1a1c; --ink-soft:#33342f;
+  --muted:#5f6058; --faint:#8c8d82; --line:#e5e3da; --line-strong:#d0cec2;
+  --accent:#b5641a; --accent-soft:#f0e2cf; --accent-ink:#8a4a10;
+  --teal:#256b64; --teal-soft:#d8e8e4;
+  --good:#2b6e46; --good-soft:#dcebdf; --warn:#a6640f; --danger:#a83c2c; --danger-soft:#f0dcd6;
+  --shadow:0 1px 2px rgba(26,26,28,.05),0 8px 28px -14px rgba(26,26,28,.14);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --read:730px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#101113; --panel:#17181b; --panel-2:#1c1e21; --ink:#eceae4; --ink-soft:#cbc9c1;
+    --muted:#9a998e; --faint:#6d6d64; --line:#282a2d; --line-strong:#383a3d;
+    --accent:#dd9a4a; --accent-soft:#352a19; --accent-ink:#eeb463;
+    --teal:#54b5a7; --teal-soft:#16302c; --good:#54bd83; --good-soft:#14281c;
+    --warn:#dd9a4a; --danger:#e07b6a; --danger-soft:#2c1713;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="light"]{--ground:#f5f4f0;--panel:#ffffff;--panel-2:#f6f5f1;--ink:#1a1a1c;--ink-soft:#33342f;--muted:#5f6058;--faint:#8c8d82;--line:#e5e3da;--line-strong:#d0cec2;--accent:#b5641a;--accent-soft:#f0e2cf;--accent-ink:#8a4a10;--teal:#256b64;--teal-soft:#d8e8e4;--good:#2b6e46;--good-soft:#dcebdf;--warn:#a6640f;--danger:#a83c2c;--danger-soft:#f0dcd6;--shadow:0 1px 2px rgba(26,26,28,.05),0 8px 28px -14px rgba(26,26,28,.14);}
+:root[data-theme="dark"]{--ground:#101113;--panel:#17181b;--panel-2:#1c1e21;--ink:#eceae4;--ink-soft:#cbc9c1;--muted:#9a998e;--faint:#6d6d64;--line:#282a2d;--line-strong:#383a3d;--accent:#dd9a4a;--accent-soft:#352a19;--accent-ink:#eeb463;--teal:#54b5a7;--teal-soft:#16302c;--good:#54bd83;--good-soft:#14281c;--warn:#dd9a4a;--danger:#e07b6a;--danger-soft:#2c1713;--shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px -16px rgba(0,0,0,.7);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:17.5px;line-height:1.72;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+h1,h2,h3,h4{font-family:var(--serif);font-weight:600;line-height:1.18;text-wrap:balance;margin:0}
+p{margin:0 0 1.05em}
+a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 38%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+em{font-style:italic}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dim{color:var(--muted)}
+.wrap{max-width:var(--read);margin:0 auto;padding:0 24px}
+.wide{max-width:1080px;margin:0 auto;padding:0 24px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink);font-weight:600}
+header.top{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--ground) 90%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .bar{max-width:1180px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:16px;height:54px}
+.brand{font-family:var(--mono);font-size:12px;letter-spacing:.05em;font-weight:600;white-space:nowrap}
+.brand b{color:var(--accent-ink)}
+nav.secs{display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none}
+nav.secs::-webkit-scrollbar{display:none}
+nav.secs a{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:6px 9px;border-radius:6px;border-bottom:none;white-space:nowrap}
+nav.secs a:hover{color:var(--ink);background:var(--panel-2)}
+nav.secs a.active{color:var(--accent-ink);background:var(--accent-soft)}
+.themebtn{font-family:var(--mono);font-size:11px;background:var(--panel);border:1px solid var(--line-strong);color:var(--muted);border-radius:6px;padding:6px 9px;cursor:pointer}
+.themebtn:hover{color:var(--ink);border-color:var(--accent)}
+.hero{padding:70px 0 46px;border-bottom:1px solid var(--line);
+  background:radial-gradient(120% 80% at 85% -20%,var(--accent-soft) 0%,transparent 60%)}
+.hero h1{font-size:clamp(30px,5vw,50px);letter-spacing:-.015em;max-width:20ch}
+.hero .lede{font-size:clamp(18px,2.1vw,21px);color:var(--ink-soft);margin-top:22px}
+.hero .who{margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+section{padding:56px 0;border-bottom:1px solid var(--line);scroll-margin-top:62px}
+.part-label{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px}
+h2.part{font-size:clamp(26px,3.6vw,38px);letter-spacing:-.015em;margin-bottom:6px}
+h3.sub{font-size:clamp(21px,2.6vw,26px);margin:44px 0 4px;letter-spacing:-.01em}
+h3.sub .n{font-family:var(--mono);font-size:15px;color:var(--accent);font-weight:600;margin-right:10px}
+h4.mini{font-size:18px;margin:26px 0 6px}
+.lead-in{color:var(--ink-soft);font-size:19px;margin:12px 0 8px}
+.box{border-radius:12px;padding:18px 22px;margin:22px 0;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow)}
+.box .bt{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.box.def{border-left:4px solid var(--teal)} .box.def .bt{color:var(--teal)}
+.box.plain{border-left:4px solid var(--teal);background:var(--teal-soft)} .box.plain .bt{color:var(--teal)}
+.box.take{border-left:4px solid var(--accent);background:var(--accent-soft)} .box.take .bt{color:var(--accent-ink)}
+.box.work{border-left:4px solid var(--muted);background:var(--panel-2)} .box.work .bt{color:var(--muted)}
+.box.warn{border-left:4px solid var(--danger);background:var(--danger-soft)} .box.warn .bt{color:var(--danger)}
+.box.good{border-left:4px solid var(--good);background:var(--good-soft)} .box.good .bt{color:var(--good)}
+.box p:last-child{margin-bottom:0}
+.box .term{font-family:var(--serif);font-weight:600;font-style:italic}
+.verdict{border:1px solid var(--accent);border-left:6px solid var(--accent);border-radius:14px;background:linear-gradient(135deg,var(--accent-soft),var(--panel) 72%);
+  padding:24px 26px;margin:26px 0;box-shadow:var(--shadow)}
+.verdict .vt{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink);font-weight:700;margin-bottom:10px}
+.verdict h4{font-size:22px;margin:0 0 10px}
+.verdict p:last-child{margin-bottom:0}
+.eq{font-family:var(--serif);font-style:italic;font-size:19px;text-align:center;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:10px;padding:20px 46px 20px 22px;margin:20px 0;position:relative;overflow-x:auto;line-height:2}
+.eq .en{position:absolute;right:14px;top:10px;font-family:var(--mono);font-style:normal;font-size:11px;color:var(--faint)}
+.eq .where{display:block;font-family:var(--sans);font-style:normal;font-size:13.5px;color:var(--muted);margin-top:12px;line-height:1.6;text-align:left}
+.m{font-family:var(--serif);font-style:italic}
+sub{font-size:.72em} sup.p{font-size:.72em}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);margin:20px 0;background:var(--panel)}
+table.led{width:100%;border-collapse:collapse;font-size:15px;min-width:620px}
+table.led th{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:left;color:var(--muted);padding:12px 16px;border-bottom:1px solid var(--line-strong);font-weight:600}
+table.led td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+table.led tr:last-child td{border-bottom:none}
+table.led td:first-child{font-weight:600}
+.yes{color:var(--good);font-weight:700}.no{color:var(--danger);font-weight:700}.mid{color:var(--warn);font-weight:700}
+.tabnum{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.tag.need{color:var(--good);background:var(--good-soft)} .tag.nice{color:var(--warn);background:var(--accent-soft)} .tag.skip{color:var(--danger);background:var(--danger-soft)}
+ul.clean{list-style:none;padding:0;margin:14px 0}
+ul.clean li{display:grid;grid-template-columns:24px 1fr;gap:10px;margin-bottom:12px;align-items:start}
+ul.clean li .ic{font-family:var(--mono);font-weight:700;margin-top:1px}
+ul.clean.ok li .ic{color:var(--good)}ul.clean.no li .ic{color:var(--danger)}ul.clean.step li .ic{color:var(--accent-ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.phase{display:grid;grid-template-columns:82px 1fr;gap:18px;padding:15px 0;border-bottom:1px solid var(--line)}
+.phase:last-child{border-bottom:none}
+.phase .pw{font-family:var(--mono);font-size:12.5px;color:var(--accent-ink);font-weight:600}
+.phase .pw small{display:block;color:var(--faint);font-weight:400;font-size:11px}
+/* pipeline diagram */
+.pipe{display:flex;flex-direction:column;gap:0;margin:22px 0}
+.pipe .stage{display:grid;grid-template-columns:30px 1fr;gap:14px;align-items:start;position:relative;padding:0 0 20px}
+.pipe .stage:last-child{padding-bottom:0}
+.pipe .stage:not(:last-child):before{content:"";position:absolute;left:14px;top:30px;bottom:-2px;width:2px;background:var(--line-strong)}
+.pipe .dot{width:30px;height:30px;border-radius:50%;background:var(--accent-soft);border:2px solid var(--accent);color:var(--accent-ink);font-family:var(--mono);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:1}
+.pipe .sc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:var(--shadow)}
+.pipe .sc b{font-family:var(--serif);font-size:17px}
+.pipe .sc .d{font-size:14.5px;color:var(--ink-soft);margin-top:2px}
+.pipe .sc .comp{font-family:var(--mono);font-size:11px;color:var(--accent-ink);margin-top:6px;letter-spacing:.03em}
+/* code */
+pre.code{background:var(--panel-2);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;padding:16px 18px;margin:18px 0;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--ink-soft)}
+pre.code .c{color:var(--faint)}
+pre.code .k{color:var(--accent-ink);font-weight:600}
+/* fan calculator */
+.calc{display:grid;grid-template-columns:1.05fr 1fr;gap:24px;align-items:start;margin-top:8px}
+@media(max-width:820px){.calc{grid-template-columns:1fr}}
+.ctrl{margin-bottom:16px}
+.ctrl label{display:flex;justify-content:space-between;font-size:14px;color:var(--ink-soft);margin-bottom:6px}
+.ctrl label b{font-family:var(--mono);color:var(--accent-ink)}
+input[type=range]{width:100%;accent-color:var(--accent);height:4px}
+.readout{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow)}
+.ro{display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--line)}
+.ro:last-child{border-bottom:none}
+.ro .rk{font-size:13.5px;color:var(--muted)}
+.ro .rv{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.ro.big .rv{font-size:24px;color:var(--accent-ink)}
+.ro.big.danger .rv{color:var(--danger)}
+.ro .rv small{font-size:12px;color:var(--muted);font-weight:400}
+.refs{font-size:13.5px;color:var(--muted)}
+.refs p{margin:0 0 8px}.refs a{font-family:var(--mono);font-size:12px}
+.foot{padding:36px 0 72px;color:var(--faint);font-size:12.5px;font-family:var(--mono)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="bar">
+    <span class="brand">STUDY&nbsp;NOTES <b>/</b> the&nbsp;harness</span>
+    <nav class="secs" id="nav">
+      <a href="#orient">What it is</a>
+      <a href="#map">The whole harness</a>
+      <a href="#spine">1 · Entity spine</a>
+      <a href="#panel">2 · PIT panel</a>
+      <a href="#graph">3 · Graph</a>
+      <a href="#propagate">4 · Propagation</a>
+      <a href="#mechanism">5 · Mechanism</a>
+      <a href="#score">6 · Scoring</a>
+      <a href="#gauntlet">7 · Leakage gauntlet</a>
+      <a href="#baselines">8 · Baselines</a>
+      <a href="#backtest">9 · Backtest</a>
+      <a href="#runtime">10 · Runtime</a>
+      <a href="#order">Build order</a>
+      <a href="#ledger">Honesty ledger</a>
+    </nav>
+    <button class="themebtn" id="theme">◐ theme</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="eyebrow">A learning document, not a pitch</span>
+    <h1>The harness — how to build the machine around the model</h1>
+    <p class="lede">You have the <em>idea</em> (an LLM that builds the economic-link graph and trades slow
+      diffusion across it) written up in the study notes. This is the companion: <b>the software system that turns
+      that idea into a testable, trustworthy signal</b> — component by component, defined before it is used, with
+      every choice labelled <em>build-this</em> or <em>skip-this</em> and every borrowed term explained in plain
+      English first. The recurring lesson of the whole project: <b>the moat is the harness, not the model.</b></p>
+    <p class="who">For Daniel · companion to sim-alpha.html &amp; agenttorch-explained.html · built 2026-09-20 · read top to bottom · ~45 min</p>
+  </div>
+</div>
+<!-- ================= ORIENT ================= -->
+<section id="orient">
+  <div class="wrap">
+    <div class="part-label">Start here · what "the harness" means</div>
+    <h2 class="part">The harness is the machine <em>around</em> the model</h2>
+    <p class="lead-in">Every time these notes said "the real cost is the harness," this is the thing they meant.
+      Let's define it once, precisely, before building any of it.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the harness</div>
+      <p>In software, a <span class="term">test harness</span> is the scaffolding that <em>runs</em> a piece of code
+        under controlled conditions, feeds it inputs, and checks its outputs — so you can trust the result. Our
+        <span class="term">harness</span> is the same idea scaled to a research strategy: it is <b>everything except
+        the LLM's cleverness</b>. The pipes that carry data in, the graph the model reasons over, the code that
+        propagates a shock, the layer that scores the answer, and — most of all — the <b>battery of tests that decide
+        whether the answer is real or an artefact of leakage and luck</b>. The model is the engine; the harness is the
+        car, the road, the crash-test rig, and the referee.</p>
+    </div>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English</div>
+      <p>Imagine you have a brilliant analyst (the LLM) who can reason about how a tariff on Company A ripples out to
+        A's suppliers and their suppliers. On its own, that's just an opinion. The harness is what makes the opinion
+        <em>bankable</em>: it makes sure the analyst never accidentally saw tomorrow's newspaper, writes the opinion
+        down at a fixed moment in time, turns it into a number, and then — coldly, mechanically — checks whether that
+        number would actually have made money out of sample, after costs, versus far simpler ideas. Without the
+        harness you cannot tell a genuine edge from a story that sounds good in hindsight.</p>
+    </div>
+
+    <div class="verdict">
+      <div class="vt">◆ The one line to remember</div>
+      <p><b>Trust before signal.</b> You build the parts that let you <em>disbelieve</em> your own results
+        (identity, point-in-time data, the leakage gauntlet) <em>before</em> the parts that generate results (the
+        graph, the propagation, the score). A signal you cannot trust is worse than no signal — it will get you to bet
+        real money on noise. This ordering is the single most important design decision in the whole project, and it
+        is why "the moat is discipline, not the model."</p>
+    </div>
+
+    <h3 class="sub"><span class="n">§</span>Why the model is the easy 10%</h3>
+    <p>Any competent fund can now prompt a strong LLM to read a filing and reason about supply chains — that is
+      becoming table stakes. What almost nobody does well is the unglamorous 90%: resolving that "AAPL" in a 2019
+      filing is the same entity as today's Apple, freezing the information set so the model can't cheat, and proving
+      after the fact that the signal isn't just the customer-momentum factor wearing a costume. That 90% <em>is</em>
+      the harness, and it is where a small, disciplined team can actually be better than a big one.</p>
+
+    <div class="box warn">
+      <div class="bt">▸ The failure this prevents</div>
+      <p>The classic way a research project like this dies: you wire up the exciting parts first (LLM + graph +
+        a backtest), see a gorgeous Sharpe, get excited, and only much later discover the backtest quietly used
+        restated data, or the LLM's training cutoff was <em>after</em> your test period, or the "signal" was 95%
+        correlated with a factor you could have bought for free. Every one of those is a harness bug, not a model bug.
+        Build the harness first and those bugs surface in week 3, not after you've raised money on a fiction.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MAP ================= -->
+<section id="map">
+  <div class="wrap">
+    <div class="part-label">The whole thing at a glance</div>
+    <h2 class="part">The harness, end to end</h2>
+    <p class="lead-in">Here is the entire data flow. Each stage is one component, and the rest of the document is one
+      section per stage. Read this once so every later section has a home.</p>
+
+    <div class="pipe">
+      <div class="stage"><div class="dot">0</div><div class="sc"><b>Entity spine</b><div class="d">Give every company one identity that survives ticker changes, mergers and reused symbols, at every point in the past.</div><div class="comp">component: identity resolver · §1</div></div></div>
+      <div class="stage"><div class="dot">1</div><div class="sc"><b>Point-in-time event panel</b><div class="d">The core table. One row = (event, company, timestamp), with an as-of date on every fact so you only ever see what was knowable then.</div><div class="comp">component: PIT store · §2</div></div></div>
+      <div class="stage"><div class="dot">2</div><div class="sc"><b>Graph construction</b><div class="d">The LLM builds and <em>types</em> the economic-link graph — who supplies, buys from, competes with whom — using only pre-event knowledge.</div><div class="comp">component: graph builder · §3</div></div></div>
+      <div class="stage"><div class="dot">3</div><div class="sc"><b>Propagation engine</b><div class="d">A shock enters at one node and spreads across the graph, hop by hop, with decay — deterministic code, not the LLM.</div><div class="comp">component: message-passing · §4</div></div></div>
+      <div class="stage"><div class="dot">4</div><div class="sc"><b>Mechanism &amp; response functions</b><div class="d">For each link: what <em>kind</em> of shock is this, and what is its <em>sign</em> on the neighbour's fundamentals — not just "the neighbour's stock moved."</div><div class="comp">component: classifier + shrinkage · §5</div></div></div>
+      <div class="stage"><div class="dot">5</div><div class="sc"><b>Scoring &amp; the signal</b><div class="d">Turn the propagated effect into an EPS estimate, compare to consensus, produce one number per name: the RippleSignal.</div><div class="comp">component: scorer · §6</div></div></div>
+      <div class="stage"><div class="dot">6</div><div class="sc"><b>The leakage gauntlet</b><div class="d">The referee. Placebos, label-shuffles, deflated Sharpe, purge/embargo — the tests that try to <em>kill</em> the signal before the market does.</div><div class="comp">component: validation · §7 — build FIRST</div></div></div>
+      <div class="stage"><div class="dot">7</div><div class="sc"><b>Baseline ladder</b><div class="d">The bar the signal must clear: customer momentum, factors, single-LLM+RAG, graph-without-mechanism. Plus ablations.</div><div class="comp">component: baselines · §8</div></div></div>
+      <div class="stage"><div class="dot">8</div><div class="sc"><b>Backtest &amp; portfolio</b><div class="d">Walk forward in time (never random splits), size positions, net out costs, report an honest net Sharpe.</div><div class="comp">component: backtester + optimiser · §9</div></div></div>
+      <div class="stage"><div class="dot">9</div><div class="sc"><b>Runtime &amp; reproducibility</b><div class="d">The plumbing that makes a run cheap, cached, seeded and repeatable — so a result you got in March you can reproduce in June.</div><div class="comp">component: orchestration · §10</div></div></div>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ How to read the diagram</div>
+      <p>Data flows <b>top to bottom</b> at run time (0→9). But you <b>build</b> it in a different order — spine and
+        PIT panel first, then the <em>gauntlet</em> (stage 6) <em>before</em> the graph/propagation/score, because the
+        gauntlet is what lets you trust everything above it. The "Build order" section near the end lays out the exact
+        week-by-week sequence. For now, just hold the shape in your head: <em>identity → frozen data → graph →
+        propagate → classify → score → judge.</em></p>
+    </div>
+  </div>
+</section>
+<!-- ================= SPINE ================= -->
+<section id="spine">
+  <div class="wrap">
+    <div class="part-label">Component 1 · the foundation</div>
+    <h2 class="part">The entity spine — one identity per company, across all of time</h2>
+    <p class="lead-in">The least glamorous component, and the one that quietly wrecks more strategies than any model
+      bug. Nothing above it can be trusted if this is wrong.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the entity spine</div>
+      <p>An <span class="term">entity spine</span> (also called an <span class="term">identity master</span> or
+        <span class="term">security master</span>) is a mapping that gives every company <b>one stable internal ID</b>,
+        and records every external identifier it ever had — ticker, exchange symbol, CIK, LEI, CUSIP/ISIN, FIGI — and
+        the <b>date ranges</b> over which each was valid. It is the dictionary that lets the rest of the harness say
+        "this filing, this price, this news item, and this graph node are all the <em>same</em> company" even when the
+        surface labels disagree.</p>
+    </div>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English — why this is hard</div>
+      <p>Company names and tickers are not stable, and this breaks intuition badly:</p>
+      <ul class="clean no" style="margin-top:6px">
+        <li><span class="ic">✕</span><b>Tickers get recycled.</b> When a company dies, its ticker is freed and later handed to a totally different company. If you join on ticker, you can silently glue Company X's 2011 prices onto Company Y's 2020 prices — an instant, invisible data-poisoning bug.</li>
+        <li><span class="ic">✕</span><b>Companies rename and re-list.</b> Google→Alphabet, Facebook→Meta. Same economic entity, new symbol. Join on symbol and you split one company into two half-histories.</li>
+        <li><span class="ic">✕</span><b>Mergers and spin-offs.</b> Two entities become one, or one becomes three. Who inherits the history? You must decide and record it.</li>
+        <li><span class="ic">✕</span><b>Every data vendor uses a different key.</b> SEC uses CIK, the legal world uses LEI, Bloomberg uses FIGI, prices come keyed by ticker. Nothing lines up out of the box.</li>
+      </ul>
+    </div>
+
+    <h3 class="sub"><span class="n">1.1</span>How to build it</h3>
+    <p>You do not need a paid security master to start. A public-domain spine that is good enough for the POC:</p>
+    <div class="tblwrap">
+      <table class="led">
+        <thead><tr><th>Identifier</th><th>What it keys</th><th>Source (public)</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>CIK</td><td>SEC filer (the legal filing entity)</td><td class="mono">SEC EDGAR</td><td>The anchor for anything filing-based. Free, official.</td></tr>
+          <tr><td>LEI</td><td>Legal entity, globally, with parent hierarchy</td><td class="mono">GLEIF (CC0)</td><td>Public-domain licence — the cleanest legal-entity graph you can get for free.</td></tr>
+          <tr><td>FIGI</td><td>The tradable security / share class</td><td class="mono">OpenFIGI</td><td>Maps tickers↔securities; handles multiple share classes.</td></tr>
+          <tr><td>Ticker+exchange</td><td>How prices/news arrive</td><td class="mono">your price vendor</td><td><span class="no">Never</span> your primary key — only an alias with a valid date range.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The build is: assign your own opaque internal ID (e.g. <span class="mono">ent_000431</span>), then attach every
+      external ID as a row with <span class="mono">valid_from</span> / <span class="mono">valid_to</span> dates.
+      Every join in the rest of the harness goes <em>through</em> the internal ID and respects those dates.</p>
+
+    <pre class="code"><span class="c"># One entity, many time-boxed aliases — the shape of a spine row</span>
+{
+  <span class="k">"entity_id"</span>: "ent_000431",
+  <span class="k">"aliases"</span>: [
+    {"type":"cik",    "value":"0001326801", "from":"2012-05-18", "to":null},
+    {"type":"ticker", "value":"FB",  "exch":"NASDAQ", "from":"2012-05-18", "to":"2022-06-09"},
+    {"type":"ticker", "value":"META","exch":"NASDAQ", "from":"2022-06-09", "to":null},
+    {"type":"lei",    "value":"BQ4BKCS1HXDV9HN80Z93", "from":"2012-06-01", "to":null}
+  ]
+}
+<span class="c"># Resolve("FB", asof="2019-03-01") -> ent_000431   (Meta, correctly)</span>
+<span class="c"># Resolve("FB", asof="2024-03-01") -> whoever holds FB THEN, NOT Meta</span></pre>
+
+    <div class="box good">
+      <div class="bt">▸ Good vs bad — the test that proves the spine works</div>
+      <p><b>Good:</b> asking "who is ticker FB on date D?" returns the right entity for <em>every</em> D, including
+        after the symbol was reassigned. <b>Bad:</b> any join anywhere in your code that uses a raw ticker or name
+        as a key. Write one deliberately nasty test — a recycled ticker — and make the spine pass it before you build
+        anything else. If it can't, every downstream number is suspect.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= PANEL ================= -->
+<section id="panel">
+  <div class="wrap">
+    <div class="part-label">Component 2 · the core data structure</div>
+    <h2 class="part">The point-in-time event panel — freezing what was knowable</h2>
+    <p class="lead-in">This is the single most important table in the harness. Get it right and leakage becomes hard;
+      get it wrong and every result is a mirage.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the event panel</div>
+      <p>The <span class="term">event panel</span> is the central table where each row is one
+        <b>(event, company, timestamp)</b>: "on 2019-03-04, Company A reported an earnings surprise." Around each
+        event the harness stores everything it needs — the graph as it stood then, the state of the neighbours, the
+        evidence the LLM read, its estimated response, its confidence, the consensus estimate, and later the realized
+        outcome. It is the unit of observation for the whole study: you count <em>events</em>, not calendar days.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — point-in-time (PIT) &amp; bitemporal data</div>
+      <p><span class="term">Point-in-time</span> means every fact carries the date it <em>became knowable</em>, and
+        you may only ever read facts knowable on or before your decision date. The clean way to guarantee this is a
+        <span class="term">bitemporal</span> store: each fact has <b>two</b> time axes — <em>valid time</em> (the
+        period the fact is about, e.g. "Q4 2018 revenue") and <em>knowledge time</em> (when you first learned it, and
+        when a correction superseded it). You query "as of knowledge-time D" and the store hands you exactly the world
+        as it looked on D.</p>
+    </div>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English — the two ways the past lies to you</div>
+      <p><b>1. Reporting lag.</b> A company's Q4 revenue is <em>about</em> December, but you didn't <em>learn</em> it
+        until the filing dropped in late February. If your backtest uses December's number in December, you traded on
+        information from the future. <b>2. Restatement / vintage.</b> Macro series and even company financials get
+        <em>revised</em>. The GDP print you can pull today for 2019 is not the number that existed in 2019 — it's been
+        cleaned up several times since. Testing on the revised number is cheating with a time machine. This is the
+        <em>ALFRED vintage trap</em>: FRED gives you today's revised series; ALFRED gives you the messy number that
+        actually existed on each past date. You must use ALFRED-style vintages.</p>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ Worked example — the same fact, two timelines</div>
+      <p>Fact: "Acme Q4-2018 EPS = $1.20."</p>
+      <ul class="clean" style="margin-top:6px">
+        <li><span class="ic">·</span><b>Valid time:</b> Oct–Dec 2018 (the quarter it describes).</li>
+        <li><span class="ic">·</span><b>Knowledge time:</b> first known 2019-02-21 08:00 (press release). </li>
+        <li><span class="ic">·</span><b>Then restated:</b> on 2019-08-09 an amended filing changes it to $1.14.</li>
+      </ul>
+      <p style="margin-top:8px">A backtest making a decision on <b>2019-03-01</b> must see <b>$1.20</b> (that's what
+        existed then), <em>not</em> the corrected $1.14 — even though $1.14 is "more accurate." Accuracy in hindsight
+        is exactly the trap. The bitemporal store returns $1.20 for any query with knowledge-time between Feb 21 and
+        Aug 9, and $1.14 only afterwards.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">2.1</span>Purge and embargo — stopping leakage across the seam</h3>
+    <div class="box def">
+      <div class="bt">▸ Definition — purge &amp; embargo (López de Prado)</div>
+      <p>When you split data into train and test, a label at time <span class="m">t</span> often depends on a window
+        of future returns (your horizon is 4–8 weeks). If a training example's <em>label window</em> overlaps the test
+        period, information bleeds across the seam. <span class="term">Purging</span> drops training examples whose
+        outcome windows overlap the test set; <span class="term">embargoing</span> additionally removes a buffer of
+        examples right after the test period, because nearby observations are serially correlated. Both come from
+        Marcos López de Prado's <em>Advances in Financial Machine Learning</em>.</p>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English</div>
+      <p>Your prediction "watches" the next 8 weeks to see if it was right. So a prediction made 3 weeks before the
+        test window starts is <em>still resolving</em> when the test begins — its answer is entangled with test-period
+        prices. Purge = "don't train on any example still watching the future when the test starts." Embargo = "and
+        leave a gap, because last week's tremor and this week's tremor are the same earthquake." Skip this and a
+        4–8-week horizon leaks by construction.</p>
+    </div>
+
+    <div class="box good">
+      <div class="bt">▸ Good vs bad — the panel done right</div>
+      <p><b>Good:</b> every column has an as-of date; the store is append-only (corrections are new rows, never
+        overwrites); a single function <span class="mono">world_as_of(D)</span> returns the frozen information set;
+        train/test are split by <em>time</em> with purge+embargo. <b>Bad:</b> a "latest value" table you
+        <span class="no">UPDATE</span> in place (you just destroyed the past), joining prices on calendar date without
+        the reporting lag, or a random train/test split (guarantees leakage in time series). If you can't answer
+        "what did we know at 9am on this date?" with one call, the panel isn't done.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= GRAPH ================= -->
+<section id="graph">
+  <div class="wrap">
+    <div class="part-label">Component 3 · where the LLM earns its keep</div>
+    <h2 class="part">Graph construction — the model builds and types the network</h2>
+    <p class="lead-in">This is the one component where the LLM does the load-bearing work. Everything the notes argued
+      for lives here: the edge is <em>building</em> the graph, not reading sentiment off it.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the economic-link graph</div>
+      <p>A directed, <b>typed</b> graph. <span class="term">Nodes</span> are companies (your entity-spine IDs).
+        <span class="term">Edges</span> are economic relationships with a <em>type</em> and a <em>direction</em>:
+        A <span class="mono">supplies</span> B, B <span class="mono">is-customer-of</span> A, A
+        <span class="mono">competes-with</span> C, A and D <span class="mono">share-input</span> X, A and E
+        <span class="mono">co-located-in</span> region R. The typing is the whole point — "the neighbour's stock moved"
+        throws away <em>why</em>; a typed edge lets you reason about the mechanism.</p>
+    </div>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English — why the LLM, and why here specifically</div>
+      <p>Disclosed supply-chain data is thin: firms only name customers above ~10% of revenue, and only the first hop.
+        The interesting links — B's supplier depends on a component from A's region; a tariff on A raises C's input
+        cost two hops away — are buried in the <em>text</em> of filings, transcripts and trade press, and they're
+        non-obvious and cross-industry. Reading unstructured text and proposing <em>typed, directional</em>
+        relationships is exactly what a strong LLM is good at and what tables miss. That is the edge. Contrast: asking
+        the LLM "will the stock go up?" is the commoditised, decaying use everyone else does.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">3.1</span>The build, in layers</h3>
+    <ul class="clean step">
+      <li><span class="ic">1</span><b>Seed with disclosed facts.</b> Pull the hard, structured links first: ≥10% customer disclosures from EDGAR, obvious sector/competitor sets. This gives a skeleton you didn't hallucinate.</li>
+      <li><span class="ic">2</span><b>LLM proposes typed edges.</b> Feed the model pre-event text and ask for structured output: <span class="mono">{from, to, type, direction, sign, evidence_span, confidence}</span>. Force it to cite the sentence it used (the evidence span) so every edge is auditable.</li>
+      <li><span class="ic">3</span><b>Constrain, don't trust.</b> Reject edges with no evidence span, dedupe against the spine, cap out-degree, and keep the confidence for later weighting. The LLM supplies <em>structure and sign</em>; it does not get to assert magnitudes.</li>
+    </ul>
+
+    <div class="box warn">
+      <div class="bt">▸ The leakage rule that governs this whole component</div>
+      <p>The LLM must build the graph for event at time <span class="m">t</span> using <b>only knowledge that existed
+        before t</b>. Two independent guards, because one is never enough:</p>
+      <ul class="clean no" style="margin-top:6px">
+        <li><span class="ic">1</span><b>Input-side:</b> feed it only documents from the PIT panel with knowledge-time &lt; t. Never today's Wikipedia, never a filing that post-dates the event.</li>
+        <li><span class="ic">2</span><b>Weights-side:</b> use an <em>open-weight</em> model with a <b>documented training cutoff</b> earlier than your test period. A closed API model may have read the future during pre-training and you can never prove it didn't. This is why the notes insist on open weights here — not for pruning, for <em>auditable cutoff</em>.</li>
+      </ul>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — GraphRAG (the retrieval pattern, optional)</div>
+      <p><span class="term">GraphRAG</span> (Microsoft, 2024) is retrieval-augmented generation where the model is
+        grounded on a <em>graph</em> of extracted entities and relations rather than a flat pile of text — so it can
+        answer multi-hop questions ("what depends on what depends on A?") coherently. It's a useful pattern for
+        <em>querying</em> the graph once built; it is not required to build it, and adds machinery, so treat it as a
+        later nice-to-have, not a v1 need.</p>
+    </div>
+
+    <div class="box good">
+      <div class="bt">▸ Good vs bad — a graph you can defend</div>
+      <p><b>Good:</b> every edge carries a type, a direction, a cited evidence span, a confidence, and a
+        knowledge-time; the whole graph can be regenerated deterministically from a pinned model + pinned inputs.
+        <b>Bad:</b> an untyped "these two are related" blob, edges with no citation (you can't audit a hallucination),
+        or a graph built once from today's data and reused for historical events (massive look-ahead). A defensible
+        graph is one where, for any edge, you can point to the sentence and the date.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= PROPAGATE ================= -->
+<section id="propagate">
+  <div class="wrap">
+    <div class="part-label">Component 4 · the deterministic core</div>
+    <h2 class="part">The propagation engine — spreading a shock across the graph</h2>
+    <p class="lead-in">Once the graph exists, a shock at one company has to ripple to its neighbours and <em>their</em>
+      neighbours. This is plain, deterministic code — and it must stay that way.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — message passing</div>
+      <p><span class="term">Message passing</span> is the standard way computation happens on a graph (it's the engine
+        inside every Graph Neural Network, and inside AgentTorch). Three steps, repeated once per <em>hop</em>: each
+        edge computes a <b>message</b> from source to destination; each node <b>aggregates</b> the messages arriving at
+        it (sum, mean, max); each node <b>updates</b> its state from the aggregate. Run it once = effects travel one
+        hop. Run it <span class="m">k</span> times = effects travel <span class="m">k</span> hops.</p>
+    </div>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English</div>
+      <p>Drop a stone (the shock) in a pond at node A. Round 1: every company directly linked to A feels a ripple whose
+        size depends on the link type and strength. Round 2: those companies pass a (weaker) ripple to <em>their</em>
+        neighbours. After a few rounds the ripple has spread across the map and faded out. "How far and how strong"
+        is set by the edge weights and a decay factor — not by the LLM, which never touches this loop.</p>
+    </div>
+
+    <div class="box work">
+      <div class="bt">▸ Worked example — one hop</div>
+      <p>Shock: A's demand drops 10% (−0.10 at node A). Edges: A←supplies B (elasticity 0.6), A competes-with C
+        (sign flips, 0.3).</p>
+      <ul class="clean" style="margin-top:6px">
+        <li><span class="ic">·</span><b>Message A→B:</b> −0.10 × 0.6 = <b>−0.06</b> to B's demand (its customer bought less).</li>
+        <li><span class="ic">·</span><b>Message A→C:</b> −0.10 × 0.3 × (−1) = <b>+0.03</b> to C (a competitor's weakness helps C).</li>
+      </ul>
+      <p style="margin-top:8px">B and C update their state; next hop, B passes its −0.06 (decayed) to B's suppliers.
+        The <em>sign</em> on each edge came from the mechanism classifier (§5); the <em>magnitude</em> (elasticity)
+        is a parameter you calibrate from data — never a number the LLM made up.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">4.1</span>The design rule: keep the LLM out of the loop</h3>
+    <div class="box take">
+      <div class="bt">▸ The division of labour (the AgentTorch lesson)</div>
+      <p>The LLM supplies <b>direction and structure</b> (which edges exist, what type, what sign). Deterministic code
+        supplies <b>magnitude and dynamics</b> (the elasticities, the decay, the arithmetic). This split is the whole
+        reason the system is trustworthy: <em>deterministic code doesn't drift</em>. The same shock through the same
+        graph gives the same numbers every time — you can debug it, unit-test it, and calibrate it. If you let the LLM
+        do the arithmetic, you get a different answer every run and nothing to test. (In AgentTorch this shows up
+        literally: a <span class="mono">float()</span> cast severs the LLM output from the gradient — the model
+        proposes, the optimiser disposes.)</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Optional: make it differentiable (calibration for free)</div>
+      <p>If you write the propagation in a tensor framework (PyTorch), the elasticities and decay become
+        <em>learnable parameters</em>. Then <span class="term">calibration</span> — fitting them so the model's
+        predicted fundamentals match realized ones — is one gradient-descent loop, and <span class="term">sensitivity
+        analysis</span> ("which parameter moves the answer most?") is just reading the gradient
+        <span class="mono">∂outcome/∂param</span> from a single backward pass, instead of re-running the sim N times.
+        This is the genuinely reusable 20% of the AgentTorch idea. It's a v1.5 optimisation, not a v1 requirement —
+        a plain NumPy loop is fine to start.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">4.2</span>The failure mode this component owns: propagation explosion</h3>
+    <p>Ripples don't just fade — the <em>number of nodes touched</em> grows geometrically with each hop. Push too far
+      and "everything affects everything," the signal drowns in noise, and later hops are pure hallucination. You must
+      cap hops and decay hard. Move the sliders to feel it:</p>
+
+    <div class="calc" style="margin-top:18px">
+      <div>
+        <div class="ctrl"><label>Avg. links per company (branching) <b id="v_b">4</b></label>
+          <input type="range" id="s_b" min="2" max="12" step="1" value="4"></div>
+        <div class="ctrl"><label>Hops propagated <b id="v_h">3</b></label>
+          <input type="range" id="s_h" min="1" max="6" step="1" value="3"></div>
+        <div class="ctrl"><label>Per-hop signal retained <b id="v_d">60</b>%</label>
+          <input type="range" id="s_d" min="20" max="95" step="5" value="60"></div>
+        <p class="dim" style="font-size:13px">Branching = how many neighbours an average node has. "Signal retained"
+          is how much of the effect survives each hop (the rest is decay + noise).</p>
+      </div>
+      <div class="readout">
+        <div class="ro"><span class="rk">Nodes reachable at the final hop</span><span class="rv" id="o_reach">64</span></div>
+        <div class="ro"><span class="rk">Effect size surviving to final hop</span><span class="rv" id="o_signal">21.6<small>%</small></span></div>
+        <div class="ro big"><span class="rk">Signal-to-reach ratio (higher = trust it)</span><span class="rv" id="o_ratio">0.34<small>%/node</small></span></div>
+        <div class="ro"><span class="rk">Verdict</span><span class="rv" id="o_verdict" style="font-size:15px">borderline</span></div>
+      </div>
+    </div>
+    <div class="box good">
+      <div class="bt">▸ Good vs bad — reading the calculator</div>
+      <p><b>Good:</b> few hops (2–3), meaningful decay, so a strong per-node effect reaches a <em>small, nameable</em>
+        set of companies you can actually inspect. <b>Bad:</b> 5–6 hops with weak decay — thousands of nodes each
+        nudged by a rounding error. When the effect-per-node falls below the noise floor, you're not simulating an
+        economy, you're generating confetti. The calculator makes the tradeoff visible: every extra hop multiplies
+        <em>reach</em> but shrinks <em>effect</em>. Stop while each touched node still has a defensible story.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= MECHANISM ================= -->
+<section id="mechanism">
+  <div class="wrap">
+    <div class="part-label">Component 5 · from "it moved" to "here's why and by how much"</div>
+    <h2 class="part">Mechanism &amp; response functions</h2>
+    <p class="lead-in">The propagation engine needs to know, for each shock: what <em>kind</em> is it, which
+      <em>direction</em> it pushes a neighbour's fundamentals, and — eventually — <em>how much</em>. That's this
+      component.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the mechanism classifier</div>
+      <p>A <span class="term">mechanism classifier</span> takes a shock and labels it: <em>demand shock, cost/input
+        shock, capacity shock, financing shock, regulatory shock, substitution shock…</em> — and, per outgoing edge
+        type, the <b>sign</b> it implies for the neighbour's revenue or margin. Example: "major customer cuts orders"
+        is a <em>demand</em> shock; along a <span class="mono">supplies→</span> edge its sign on the supplier's revenue
+        is <b>negative</b>; along a <span class="mono">competes-with</span> edge to a rival supplier it may be
+        <b>positive</b>.</p>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English — why the sign matters more than the move</div>
+      <p>A customer's stock jumping +20% is ambiguous — it could mean "ordering more" (good for suppliers) or "cut
+        costs / laid off staff / did a buyback" (neutral-to-bad for suppliers). The customer-momentum signal that
+        every fund already runs collapses all of that into one number and hopes. Recovering the <em>mechanism</em> —
+        was it demand or cost-cutting? — is the incremental information the whole thesis is betting on. If you can't
+        articulate the mechanism, you have nothing the simple signal doesn't already have.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — response function</div>
+      <p>A <span class="term">response function</span> is the numeric part: given a shock of a certain type and size
+        arriving at a company, how much does <em>this</em> company's revenue/margin/EPS move? It's the elasticity the
+        propagation engine multiplies by. Two firms react differently to the same shock (one has pricing power, one
+        doesn't), so response functions are estimated per firm — but most firms have too little history to estimate
+        alone.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">5.1</span>Cross-sectional shrinkage — borrowing strength across firms</h3>
+    <div class="box def">
+      <div class="bt">▸ Definition — shrinkage (partial pooling)</div>
+      <p><span class="term">Shrinkage</span> pulls a noisy per-firm estimate toward a more stable group prior:</p>
+      <div class="eq"><span class="en">eq. 5.1</span>
+        estimate<sub>i</sub> = λ · (company <span class="m">i</span>'s own history) + (1 − λ) · (peer/industry prior)
+        <span class="where">λ (0–1) rises with how much reliable history firm <span class="m">i</span> has. Data-rich
+        firm → λ near 1 (trust its own numbers). Sparse firm → λ near 0 (lean on peers).</span>
+      </div>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English — and why it beats a model-per-company</div>
+      <p>If you fit a separate model for each company, the small/new firms — often exactly where the mispricing lives —
+        get wild estimates from three data points. Shrinkage says: "I've barely seen this firm, so assume it behaves
+        like its industry until it proves otherwise." As evidence accumulates, λ rises and the estimate earns its
+        independence. It's the statistically honest way to have an opinion about a firm you've only seen a few times,
+        and it's why the research plan insists on <em>cross-sectional</em> learning, not one model per name.</p>
+    </div>
+
+    <div class="box good">
+      <div class="bt">▸ Good vs bad</div>
+      <p><b>Good:</b> a small, closed set of shock types with clearly signed effects per edge type; response
+        magnitudes shrunk toward industry priors and calibrated on realized fundamentals. <b>Bad:</b> a free-text
+        "impact" the LLM writes per event (unstable, unbacktestable, drifts every run), or an ever-growing taxonomy of
+        200 bespoke shock types — that's overfitting the event taxonomy, a named failure mode. Keep the taxonomy small
+        enough that each type has enough events to validate.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SCORE ================= -->
+<section id="score">
+  <div class="wrap">
+    <div class="part-label">Component 6 · turning simulation into one number</div>
+    <h2 class="part">Scoring — the RippleSignal</h2>
+    <p class="lead-in">The propagation gives you an expected change in a company's fundamentals. The score turns that
+      into a tradable signal by comparing it to what the market already expects.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the gap vs consensus</div>
+      <p>The signal is not "we think EPS will rise." It's "<b>we think EPS will rise <em>more than the analysts
+        do</em>.</b>" You take the harness's estimated <span class="mono">ΔEPS</span> for a name, subtract the
+        consensus estimate (what's already priced in), and the residual — the surprise the crowd is missing — is the
+        <span class="term">RippleSignal</span>. Trading requires an <em>edge over consensus</em>, not a correct
+        forecast the market already shares.</p>
+    </div>
+    <div class="eq"><span class="en">eq. 6.1</span>
+      RippleSignal<sub>i,t</sub> = ΔEPS<sub>i</sub><sup class="p">(harness)</sup> − ΔEPS<sub>i</sub><sup class="p">(consensus)</sup>
+      <span class="where">Positive → the harness expects a fundamental surprise the market hasn't priced → candidate
+      long. Negative → candidate short. Magnitude and confidence set position size later.</span>
+    </div>
+
+    <h3 class="sub"><span class="n">6.1</span>The one test the whole strategy exists to pass</h3>
+    <div class="box def">
+      <div class="bt">▸ Definition — the incremental-value regression</div>
+      <p>The signal is only worth building if it adds information <em>beyond</em> the cheap signal everyone has. You
+        test that with one cross-sectional regression:</p>
+      <div class="eq"><span class="en">eq. 6.2</span>
+        r<sub>i,t+1</sub> = α + β<sub>1</sub>·CustomerMomentum<sub>i,t</sub> + β<sub>2</sub>·RippleSignal<sub>i,t</sub> + controls + ε<sub>i,t</sub>
+        <span class="where">r = next-period return. The question is entirely about <span class="m">β<sub>2</sub></span>:
+        is it significant, stable, and the right sign <em>after</em> customer momentum and standard factors are already
+        in the regression?</span>
+      </div>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English — what a win and a loss look like</div>
+      <p>Put both signals in the same race. If <span class="m">β<sub>2</sub></span> stays positive and significant
+        <em>with customer momentum sitting right next to it</em>, the harness knows something the simple signal
+        doesn't — that's the win. If <span class="m">β<sub>2</sub></span> collapses to ~0 once customer momentum is in
+        the regression, then all your machinery just re-derived the free signal the long way round — and the honest
+        move is to use the simple one. This single coefficient is the go/no-go the entire project rides on.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= GAUNTLET ================= -->
+<section id="gauntlet">
+  <div class="wrap">
+    <div class="part-label">Component 7 · the referee · build this FIRST</div>
+    <h2 class="part">The leakage gauntlet — the part that lets you disbelieve yourself</h2>
+    <p class="lead-in">This is the heart of the harness and the reason the moat is discipline. It is a battery of tests
+      designed to <em>kill</em> your signal. Whatever survives, you can trust. Build it before the signal it judges.</p>
+
+    <div class="box take">
+      <div class="bt">▸ Why it comes first</div>
+      <p>If you build the signal first, you will fall in love with it, and then every test you write will be
+        (unconsciously) one it can pass. Build the referee while you have nothing to defend, and the first thing you
+        run through it is a <b>signal you know is fake</b> — to confirm the gauntlet <em>catches</em> it. A gauntlet
+        that never rejects anything is decoration. "Prove the harness catches a known-fake signal" is the acceptance
+        test for this whole component.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">7.1</span>The tests, defined and explained</h3>
+
+    <div class="box def">
+      <div class="bt">▸ Placebo / negative control</div>
+      <p><b>What:</b> run the exact pipeline on an input that <em>should</em> produce nothing — a random graph, a
+        shuffled event calendar, a fake company. <b>Plain English:</b> a pregnancy test that reads positive on tap
+        water is broken. If your pipeline "finds alpha" in noise, the alpha it finds in real data is also noise.
+        <b>Pass:</b> placebo signal ≈ 0.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Label-shuffle (permutation test)</div>
+      <p><b>What:</b> randomly re-pair each prediction with some <em>other</em> event's realized outcome, thousands of
+        times, and rebuild the performance distribution. <b>Plain English:</b> if your real Sharpe sits comfortably
+        inside the cloud of Sharpes you get from deliberately mismatched labels, your result is what randomness
+        produces — you've measured luck. <b>Pass:</b> real performance in the far tail of the shuffled distribution.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Anonymisation test</div>
+      <p><b>What:</b> strip company names/tickers and any identifying strings from what the LLM sees, so it can't
+        recognise "oh, this is the 2020 COVID crash" and pattern-match the outcome from memory. <b>Plain English:</b>
+        you want the model reasoning from the <em>mechanism</em>, not recalling how the story ended. <b>Pass:</b>
+        signal survives anonymisation (if it collapses, it was memory/leakage, not reasoning).</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Deflated Sharpe ratio (Bailey &amp; López de Prado)</div>
+      <p><b>What:</b> a corrected Sharpe that penalises you for <em>how many strategies you tried</em> and for
+        non-normal returns. Try 100 variants and the best one looks great by chance alone; the deflated Sharpe asks
+        "is this better than the best you'd expect from 100 coin-flips?" <b>Plain English:</b> torture the data long
+        enough and it confesses to anything — this test prices in the torture. <b>Pass:</b> deflated Sharpe still
+        clears your bar. (Corollary: pre-commit to <em>one</em> strategy so the penalty stays near zero — a recurring
+        theme in the notes.)</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ PBO — probability of backtest overfitting (Bailey et al.)</div>
+      <p><b>What:</b> repeatedly split your trials into two halves; how often does the config that looked best
+        in-sample underperform out-of-sample? That frequency is the PBO. <b>Plain English:</b> it directly estimates
+        "what's the chance my 'best' result is just the luckiest overfit?" <b>Pass:</b> PBO comfortably below 50%
+        (ideally well under).</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Fama–MacBeth — count events, not rows</div>
+      <p><b>What:</b> estimate the cross-sectional relationship <em>date by date</em>, then average the per-date
+        coefficients and test <em>that</em> series. <b>Plain English:</b> 5,000 stocks on the same day in the same
+        market crash are not 5,000 independent facts — they're closer to one. Fama–MacBeth stops you from mistaking a
+        handful of market-wide events for a huge, significant sample. <b>Pass:</b> the averaged coefficient is
+        significant on the count of <em>independent periods</em>, not the inflated row count.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Cutoff &amp; PIT audit (the leakage-specific ones)</div>
+      <p><b>What:</b> automated checks that (a) the LLM's training cutoff predates every test event, and (b) every fact
+        used by every decision has knowledge-time &lt; decision-time. <b>Plain English:</b> the two ways the future
+        sneaks in — through the model's memory and through the data pipe — each get their own tripwire. <b>Pass:</b>
+        zero facts with a future knowledge-time; documented, verified model cutoff.</p>
+    </div>
+
+    <div class="box warn">
+      <div class="bt">▸ The mindset: guilty until proven innocent</div>
+      <p>Treat every positive result as leakage until you've ruled it out. The notes are blunt about this: leakage is
+        the default hypothesis, not the exception. The gauntlet is how you discharge the burden of proof. A signal
+        that survives placebo + shuffle + anonymisation + deflated-Sharpe + PBO + a clean PIT audit is one you've
+        <em>genuinely tried to kill</em> and failed. That — not a pretty equity curve — is what earns real capital.</p>
+    </div>
+
+    <div class="box good">
+      <div class="bt">▸ Good vs bad — the gauntlet itself</div>
+      <p><b>Good:</b> the gauntlet runs automatically on every result, rejects known-fakes, and its verdict is
+        recorded next to the signal. <b>Bad:</b> tests you run once, by hand, only on the result you like; or a
+        gauntlet you weaken after it rejects your favourite signal. The moment you start negotiating with the referee,
+        you've lost the only edge a small team has here.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= BASELINES ================= -->
+<section id="baselines">
+  <div class="wrap">
+    <div class="part-label">Component 8 · the bar to clear</div>
+    <h2 class="part">The baseline ladder — what the signal must beat</h2>
+    <p class="lead-in">"The agents gave plausible answers" is not a result. The result is: the harness beats every
+      simpler, cheaper thing that could explain the same returns. You build those simpler things <em>on purpose</em>,
+      as opponents.</p>
+
+    <div class="box plain">
+      <div class="bt">▸ In plain English — why you build your own competition</div>
+      <p>Every rung of this ladder is a way your fancy signal could secretly <em>be</em> something boring. If a plain
+        factor model, or a single LLM with search, or the graph with the mechanism ripped out, does just as well, then
+        the expensive machinery earned nothing. You climb the ladder to force the honest question at each rung: "did
+        <em>this specific piece</em> add anything?"</p>
+    </div>
+
+    <div class="tblwrap">
+      <table class="led">
+        <thead><tr><th>Baseline / ablation</th><th>What it isolates</th><th>If the harness ties it…</th></tr></thead>
+        <tbody>
+          <tr><td>Customer momentum</td><td>The cheap signal every fund has</td><td class="no">Fatal — use the cheap one.</td></tr>
+          <tr><td>Centrality-weighted momentum</td><td>Momentum + basic network structure</td><td class="no">The graph adds no value over topology alone.</td></tr>
+          <tr><td>Standard factor models</td><td>Value/size/momentum/quality exposure</td><td class="no">You built a factor in disguise.</td></tr>
+          <tr><td>Single LLM + RAG</td><td>"Just ask a smart model with search"</td><td class="mid">The whole simulation apparatus is overkill.</td></tr>
+          <tr><td>Graph <em>without</em> response functions</td><td>Value of the mechanism layer (§5)</td><td class="mid">Mechanism modelling isn't paying off.</td></tr>
+          <tr><td>Direct-effects-only (1 hop)</td><td>Value of multi-hop propagation (§4)</td><td class="mid">Multi-hop is noise; stay at 1 hop.</td></tr>
+          <tr><td>Shared-analyst factor</td><td>Co-coverage explaining co-movement</td><td class="no">Your "links" are just shared analyst attention.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — ablation</div>
+      <p>An <span class="term">ablation</span> removes one component and re-measures. The bottom three rows are
+        ablations of your own harness: kill the mechanism classifier, kill multi-hop, and see if the score still
+        works. This is how you attribute performance to a <em>part</em>, not to the whole black box — and how you find
+        out which components you can throw away to make v1 simpler.</p>
+    </div>
+    <div class="box good">
+      <div class="bt">▸ Good vs bad</div>
+      <p><b>Good:</b> every baseline runs through the <em>same</em> gauntlet, PIT panel and cost model as the real
+        signal — an apples-to-apples race. <b>Bad:</b> comparing your carefully-tuned signal to a strawman baseline
+        you ran once with defaults. If you want to believe you beat customer momentum, build the <em>best honest</em>
+        version of customer momentum and beat <em>that</em>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BACKTEST ================= -->
+<section id="backtest">
+  <div class="wrap">
+    <div class="part-label">Component 9 · from signal to (paper) P&amp;L</div>
+    <h2 class="part">Backtest &amp; portfolio — walking forward, netting costs</h2>
+    <p class="lead-in">A signal that predicts returns is not yet a strategy. This component turns per-name scores into
+      positions, walks them through time honestly, and subtracts the frictions that kill most paper edges.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — walk-forward (out-of-sample) testing</div>
+      <p><span class="term">Walk-forward</span> testing respects the arrow of time: fit on an <em>early</em> window,
+        validate on the <em>next</em> window, and touch a single <b>most-recent, never-seen</b> window exactly
+        once, at the very end, as the real test. <b>Never</b> a random train/test split — in time series that shuffles
+        the future into the training set. You get one honest look at the final test period; spend it wisely.</p>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English — the one-shot final test</div>
+      <p>The most-recent slice of data is a non-renewable resource. Every time you peek at it and then tweak the model,
+        you've contaminated it — it's now part of your training, and its verdict no longer means anything. So you
+        develop entirely on earlier data, lock everything, and run the final period <em>once</em>. If it fails, you
+        don't get to "try again" on that period; you go back to theory. That discipline is what makes the final
+        number believable.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the portfolio optimiser</div>
+      <p>Alpha (what to bet on) and risk (how much) are kept separate. The optimiser chooses position weights
+        <span class="m">w</span>:</p>
+      <div class="eq"><span class="en">eq. 9.1</span>
+        max<sub>w</sub> &nbsp; α&#770;<sup class="p">T</sup>w &nbsp;−&nbsp; λ·w<sup class="p">T</sup>Σw &nbsp;−&nbsp; γ·Turnover(w)
+        <span class="where">α&#770; = predicted alpha (your RippleSignal). Σ = covariance (risk). λ = risk aversion,
+        γ = trading-cost aversion. Solved under dollar-, beta- and sector-neutrality so you're betting on the
+        <em>ripple</em>, not on the market or a sector drifting.</span>
+      </div>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English — each term</div>
+      <p>First term: lean into names with high predicted alpha. Second: but don't pile into correlated bets that blow
+        up together (that's the risk penalty). Third: and don't churn the book so hard that trading costs eat the
+        edge. <em>Neutrality</em> constraints strip out the market/sector so that if you make money, it's from the
+        ripple insight and not from accidentally being long tech in a tech rally.</p>
+    </div>
+
+    <div class="box warn">
+      <div class="bt">▸ The failure this component owns: the capacity/cost gap</div>
+      <p>Many paper edges are real but tiny, and live in small, illiquid names — so real trading costs and limited
+        capacity erase them. The backtest must charge realistic spreads, market impact and borrow costs, and report
+        <b>net</b> Sharpe and how much capital the signal can actually absorb. A gross-of-cost, microcap-concentrated
+        Sharpe (the trap several of the cited papers fall into) is not a business.</p>
+    </div>
+    <div class="box good">
+      <div class="bt">▸ Good vs bad</div>
+      <p><b>Good:</b> walk-forward, one-shot final test, costs and capacity modelled, results reported net and
+        risk-neutralised. <b>Bad:</b> in-sample Sharpe, gross of costs, on names you could never trade at size — the
+        classic way a "great backtest" becomes a losing fund.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= RUNTIME ================= -->
+<section id="runtime">
+  <div class="wrap">
+    <div class="part-label">Component 10 · the plumbing that makes it repeatable</div>
+    <h2 class="part">Runtime &amp; reproducibility</h2>
+    <p class="lead-in">The last component is the least visible: the orchestration that makes a run cheap, cached, and —
+      above all — <em>reproducible</em>. A result you can't reproduce is a rumour.</p>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — the archetype trick (keeping LLM calls cheap)</div>
+      <p>You do <b>not</b> call the LLM once per company per event — that's millions of calls. Following AgentTorch's
+        <span class="term">archetype</span> idea: group firms into a few behavioural archetypes, call the LLM
+        <em>once per archetype</em> to get its response pattern, then apply that pattern deterministically to every
+        firm in the group. Tens of calls, not millions. Compute stops being the constraint; engineering time becomes
+        the real cost — which, as the notes stress, is exactly where the value is, so spend it there.</p>
+    </div>
+
+    <div class="box def">
+      <div class="bt">▸ Definition — reproducibility (the run ledger)</div>
+      <p>A run is <span class="term">reproducible</span> if re-running it later gives the same result. That requires
+        pinning four things and recording them in a <span class="term">run ledger</span>: (1) the model
+        weights + version + cutoff, (2) the exact data vintage (as-of snapshot), (3) all random seeds, (4) the code
+        commit. Cache LLM outputs keyed by (prompt, model-hash) so re-runs are cheap and identical.</p>
+    </div>
+    <div class="box plain">
+      <div class="bt">▸ In plain English — why this is a trust feature, not a nicety</div>
+      <p>Say you get a promising result in March. In June an investor asks you to reproduce it. If your LLM was a
+        closed API that silently updated, your data was overwritten in place, and your seeds weren't fixed, you
+        <em>cannot</em> — and now you don't know if March was real. Pinning everything means any past result can be
+        regenerated bit-for-bit. It's the same discipline as the PIT panel, applied to your own experiments: freeze
+        what you knew and how you computed it.</p>
+    </div>
+
+    <div class="box take">
+      <div class="bt">▸ The reassuring part: the bill</div>
+      <p>With the archetype trick, realistic POC LLM compute is <b>hundreds to low-thousands of dollars</b>, self-hosted
+        or via API; public data is ~$300–700/yr. The dominant cost is <em>your engineering time</em> on the spine,
+        the PIT panel and the gauntlet. That's not a bug — those are the components that are hard to copy, so time
+        spent there is the moat being built. (The interactive cost calculator in <span class="mono">sim-alpha.html</span>
+        lets you scale these numbers.)</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUILD ORDER ================= -->
+<section id="order">
+  <div class="wrap">
+    <div class="part-label">Putting it together · the sequence</div>
+    <h2 class="part">Build order — trust before signal, in weeks</h2>
+    <p class="lead-in">The components have a run-time order (data → signal → judge) and a <em>build</em> order. They
+      are not the same. You build the things that let you distrust results before the things that produce them. This is
+      the 12-week path from the study notes, mapped onto the components above.</p>
+
+    <div style="margin-top:10px">
+      <div class="phase"><div class="pw">Wk 0<small>data</small></div><div><b>Spine + data stack.</b> Stand up EDGAR / GDELT / Treasury-ALFRED ingest and the identity spine (CIK/LEI/OpenFIGI). Pin an open-weight model with a documented cutoff. <span class="mono">→ §1, §10</span></div></div>
+      <div class="phase"><div class="pw">Wk 1–2<small>rails</small></div><div><b>The PIT event panel.</b> (event, company, timestamp) with as-of dates on everything; prices/fundamentals wired point-in-time; purge/embargo plumbing. <span class="mono">→ §2</span></div></div>
+      <div class="phase"><div class="pw">Wk 3–4<small>trust</small></div><div><b>The leakage gauntlet — first.</b> Anonymisation, placebo, label-shuffle, Fama–MacBeth, deflated Sharpe, PBO. Prove it <em>catches a known-fake signal</em> before you have a real one. <span class="mono">→ §7</span></div></div>
+      <div class="phase"><div class="pw">Wk 5–7<small>signal</small></div><div><b>Graph + propagation + score.</b> Seed disclosed ≥10% customers, add LLM-proposed typed edges, propagate one narrow shock type (major-customer earnings surprises), score the gap vs consensus. <span class="mono">→ §3, §4, §5, §6</span></div></div>
+      <div class="phase"><div class="pw">Wk 8–10<small>test the moat</small></div><div><b>The baseline ladder + ablations.</b> Is the graph marginal to customer-momentum and the shared-analyst factor? Does multi-hop beat 1-hop? Ablate the LLM, the graph, the mechanism. <span class="mono">→ §8</span></div></div>
+      <div class="phase"><div class="pw">Wk 11–12<small>decide</small></div><div><b>Final walk-forward test + verdict.</b> One untouched most-recent period, net of costs, against the go/no-go rule (the β<sub>2</sub> test). Write the honest verdict — including "no." <span class="mono">→ §6.1, §9</span></div></div>
+      <div class="phase"><div class="pw">Step 2<small>if go</small></div><div><b>Live forward-testing.</b> The only fully-clean out-of-sample there is. Only then consider paid data / commercial licences and capacity scaling.</div></div>
+    </div>
+
+    <div class="verdict">
+      <div class="vt">◆ The shape of the whole thing</div>
+      <p>Notice weeks 3–4: the referee is built <em>before</em> the player. That inversion — <b>trust infrastructure
+        before signal generation</b> — is the entire philosophy of the harness in one scheduling decision. Everything
+        else is execution.</p>
+    </div>
+  </div>
+</section>
+<!-- ================= LEDGER ================= -->
+<section id="ledger">
+  <div class="wrap">
+    <div class="part-label">Keeping myself honest</div>
+    <h2 class="part">Honesty ledger — what's established vs. my design choice</h2>
+    <p class="lead-in">You've caught embellishment before, so here every claim in this document is sorted into
+      established engineering practice (citable), a design choice specific to <em>this</em> project (a decision, not a
+      fact), or a hypothesis that only live results can settle.</p>
+
+    <div class="tblwrap">
+      <table class="led">
+        <thead><tr><th>Claim in this doc</th><th>Status</th><th>Basis / caveat</th></tr></thead>
+        <tbody>
+          <tr><td>Point-in-time / bitemporal data, purge &amp; embargo</td><td><span class="tag need">established</span></td><td>Standard quant practice; purge/embargo from López de Prado, <em>Advances in Financial ML</em>.</td></tr>
+          <tr><td>Deflated Sharpe, PBO</td><td><span class="tag need">established</span></td><td>Bailey &amp; López de Prado (deflated Sharpe); Bailey et al. (PBO). Real, published, widely used.</td></tr>
+          <tr><td>Fama–MacBeth "count events not rows"</td><td><span class="tag need">established</span></td><td>Fama &amp; MacBeth (1973); the independence caveat is textbook.</td></tr>
+          <tr><td>Ticker recycling / security-master problems</td><td><span class="tag need">established</span></td><td>Well-known data-engineering hazard; GLEIF CC0, EDGAR, OpenFIGI are real public sources.</td></tr>
+          <tr><td>Message passing; LLM-outside-the-gradient; archetype trick; differentiable calibration = read the gradient</td><td><span class="tag nice">verified from source</span></td><td>Read from the AgentTorch repo (see <span class="mono">agenttorch-explained.html</span>). Capability-proof for the <em>architecture</em>, not proof of market alpha.</td></tr>
+          <tr><td>Build order (spine→panel→gauntlet→signal→test)</td><td><span class="tag nice">design choice</span></td><td>My/your engineering judgement expressing "trust before signal." Sensible, not a theorem.</td></tr>
+          <tr><td>The specific component decomposition &amp; the fan-out calculator's exact formula</td><td><span class="tag nice">design choice</span></td><td>An illustrative decomposition and a toy model of decay-vs-reach to build intuition — not a calibrated result.</td></tr>
+          <tr><td>The β<sub>2</sub> incremental-value test is the go/no-go</td><td><span class="tag nice">design choice</span></td><td>Follows directly from the README's stated hypothesis; the threshold is yours to set.</td></tr>
+          <tr><td>"LLM-built links carry alpha beyond customer momentum &amp; the shared-analyst factor"</td><td><span class="tag skip">hypothesis</span></td><td>The entire bet. Unproven. Only the gauntlet + live forward test can settle it; the honest prior is skeptical.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box warn">
+      <div class="bt">▸ The one thing this document is not</div>
+      <p>This is a <em>how to build the machine</em> guide. It does not claim the machine will find alpha — that's the
+        job of the study notes' evidence and, ultimately, of running the gauntlet on real data. A beautifully built
+        harness around a signal that doesn't exist is still zero. The value of the harness is precisely that it will
+        tell you that, quickly and honestly, if it's true.</p>
+    </div>
+
+    <h3 class="sub"><span class="n">§</span>Where this sits</h3>
+    <ul class="clean">
+      <li><span class="ic">·</span><b><span class="mono">sim-alpha.html</span></b> — the idea and the evidence: which strategy, why, and whether the signal is real or an illusion.</li>
+      <li><span class="ic">·</span><b><span class="mono">agenttorch-explained.html</span></b> — the architecture inspiration for the propagation/calibration components (§4).</li>
+      <li><span class="ic">·</span><b>this doc</b> — the machine around the model: the ten components and the order to build them.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= REFS ================= -->
+<section id="refs">
+  <div class="wrap">
+    <div class="part-label">Pointers</div>
+    <h2 class="part">Sources for the borrowed terms</h2>
+    <div class="refs" style="margin-top:16px">
+      <p><b>Validation &amp; leakage</b></p>
+      <p>López de Prado, <i>Advances in Financial Machine Learning</i> (purge/embargo, PBO, backtest hygiene) — Wiley, 2018</p>
+      <p>Bailey &amp; López de Prado, <i>The Deflated Sharpe Ratio</i> — <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551">SSRN 2460551</a></p>
+      <p>Bailey, Borwein, López de Prado, Zhu, <i>The Probability of Backtest Overfitting</i> — <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253">SSRN 2326253</a></p>
+      <p>Fama &amp; MacBeth (1973), <i>Risk, Return, and Equilibrium</i> — <i>J. Political Economy</i></p>
+      <p><b>Data / identity</b></p>
+      <p>SEC EDGAR APIs — <a href="https://www.sec.gov/search-filings/edgar-application-programming-interfaces">sec.gov</a>; ALFRED vintages — <a href="https://alfred.stlouisfed.org/help/downloaddata">alfred</a>; GLEIF LEI (CC0) — <a href="https://www.gleif.org/en/about/open-data">gleif</a>; OpenFIGI — <a href="https://www.openfigi.com/">openfigi.com</a></p>
+      <p><b>Architecture</b></p>
+      <p>AgentTorch / Large Population Models — <a href="https://github.com/AgentTorch/AgentTorch">github.com/AgentTorch/AgentTorch</a>; Chopra, <i>Population AI</i>, MIT 2026</p>
+      <p>Microsoft GraphRAG — <a href="https://arxiv.org/abs/2404.16130">arxiv 2404.16130</a></p>
+      <p><b>The signal thesis</b></p>
+      <p>FactSet, <i>Supply Chain Signals / network centrality</i> — <a href="https://insight.factset.com/supply-chain-signals-enhancing-the-customer-momentum-strategy-with-network-centrality">factset</a>; and see the full source list in <span class="mono">sim-alpha.html</span></p>
+    </div>
+
+    <div class="foot wrap" style="padding-left:0;padding-right:0">
+      Study notes · the harness · built 2026-09-20 · companion to sim-alpha.html &amp; agenttorch-explained.html ·
+      a learning document — established practice, project design choices, and one big unproven hypothesis, kept
+      clearly apart.
+    </div>
+  </div>
+</section>
+
+<script>
+/* theme toggle */
+(function(){var b=document.getElementById('theme');function cur(){return document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}
+b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);});})();
+/* scroll-spy */
+(function(){var links=[].slice.call(document.querySelectorAll('nav.secs a'));var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+var obs=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(a){a.classList.remove('active');});var a=map[e.target.id];if(a){a.classList.add('active');a.scrollIntoView({block:'nearest',inline:'center'});}}});},{rootMargin:'-45% 0px -50% 0px'});
+document.querySelectorAll('section[id]').forEach(function(s){obs.observe(s);});})();
+/* fan-out calculator */
+(function(){var sb=document.getElementById('s_b'),sh=document.getElementById('s_h'),sd=document.getElementById('s_d');
+if(!sb)return;
+var vb=document.getElementById('v_b'),vh=document.getElementById('v_h'),vd=document.getElementById('v_d');
+var oreach=document.getElementById('o_reach'),osig=document.getElementById('o_signal'),oratio=document.getElementById('o_ratio'),over=document.getElementById('o_verdict');
+function fmt(n){if(n>=1e6)return (n/1e6).toFixed(2)+'M';if(n>=1e3)return (n/1e3).toFixed(1)+'k';return Math.round(n).toString();}
+function calc(){var b=+sb.value,h=+sh.value,d=+sd.value/100;
+vb.textContent=b;vh.textContent=h;vd.textContent=(d*100).toFixed(0);
+var reach=Math.pow(b,h);
+var signal=Math.pow(d,h);
+var ratio=signal/reach*100; /* percent of original effect per reached node */
+oreach.textContent=fmt(reach);
+osig.innerHTML=(signal*100).toFixed(1)+'<small>%</small>';
+oratio.innerHTML=ratio.toFixed(3)+'<small>%/node</small>';
+var big=oratio.closest('.ro');
+if(ratio>=2){over.textContent='trust it';over.style.color='var(--good)';big.classList.remove('danger');}
+else if(ratio>=0.3){over.textContent='borderline';over.style.color='var(--warn)';big.classList.remove('danger');}
+else{over.textContent='confetti — cut hops/decay';over.style.color='var(--danger)';big.classList.add('danger');}
+}
+[sb,sh,sd].forEach(function(n){n.addEventListener('input',calc);});calc();})();
+</script>
+</body>
+</html>

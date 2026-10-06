@@ -99,6 +99,24 @@ an economic-link graph and trade the slow diffusion of shocks across it (the
   - RL with verifiable rewards and expert iteration
   - What the traced data actually trains — and at which stage
   - Part C — The "Alpha" lineage: AlphaZero → AlphaProof → AlphaEvolve
+- **Chapter 8: Not Forgetting — Catastrophic Forgetting and the SFT → RL → SFT Loop**
+  - The forgetting phenomenon: what RL on one skill does to the others
+  - The consolidation dataset: a mixture, never the winners alone
+  - Three knobs for preservation: KL, replay loss, post-RL SFT
+  - Approach 1 — fold preservation into RL
+  - Approach 2 — RL first, then consolidation SFT
+  - Why separating the stages buys exploration
+  - The catch: SFT2 cannot recover what RL never discovered
+  - Is SFT2 mandatory? The iterative distillation view
+  - The tradeoff in one line, and the mental model
+- **Chapter 9: Where to Spend Computation — Depth, Chain-of-Thought, Looping, and the Harness**
+  - The four levels where extra computation can live
+  - Level 1 — Transformer depth, and why decode is memory-bound
+  - Level 2 — Chain-of-thought: more tokens, more sequential passes
+  - Level 3 — Latent / recurrent / looped reasoning
+  - Level 4 — Harness, agents, and Recursive Language Models
+  - The synthesis: which computation belongs at which level
+  - The one systems equation to keep
 
 ---
 
@@ -3026,9 +3044,14 @@ INPUTS:
   class set:     ~100–200 model-generated  + caption "a photo of a woman"
                  generic "woman" images
 
-PER STEP:
-  loss_her   = denoise-error on an instance image  (conditioned on "sksgirl")
-  loss_class = denoise-error on a class image       (conditioned on "woman")
+PER STEP (for each image x, whether instance or class):
+  t   ~ Uniform(timesteps);   ε ~ N(0, I)              # random noise level + noise
+  x_t = √(ᾱ_t)·x + √(1-ᾱ_t)·ε                          # add noise to the latent
+  ε̂  = ε_θ(x_t, t, c)                                  # model PREDICTS the noise (given caption c)
+  loss_image = ‖ε - ε̂‖²                                # error on the NOISE, not on x
+
+  loss_her   = loss_image for an instance latent  (c = "sksgirl")
+  loss_class = loss_image for a class latent       (c = "woman")
   total      = loss_her + λ · loss_class
   backprop(total) → update weights (full model for DreamBooth, low-rank BA for DreamBooth-LoRA)
 
@@ -3036,6 +3059,58 @@ OUTPUT:
   DreamBooth        → a whole new model file (GBs)
   DreamBooth-LoRA   → a small adapter (MBs)
 ```
+
+### How the diffusion loss is actually computed
+
+The pseudocode above is loose in one important way, and it is worth being exact:
+**the loss is never "how far the output image drifts from her photo."** A
+diffusion model is not trained to output a finished image in one shot — it is
+trained to **predict the noise** (equivalently, the *velocity*) that was added to
+a partially-noised sample. The per-example objective is the **denoising score-
+matching loss**:
+
+$$
+\mathcal{L}_{\text{image}}
+\;=\;
+\mathbb{E}_{t \sim \mathcal{U},\; \epsilon \sim \mathcal{N}(0,I)}
+\Big[\;
+\big\lVert\, \epsilon \;-\; \epsilon_\theta\big(\underbrace{\sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon}_{x_t},\; t,\; c\big) \,\big\rVert^2
+\;\Big].
+$$
+
+Read it step by step:
+
+1. **Take a clean training latent** $x_0$ (the VAE encoding of the photo).
+2. **Pick a random timestep** $t$ and **sample Gaussian noise** $\epsilon$.
+3. **Corrupt it** to $x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$,
+   where $\bar\alpha_t$ is the noise schedule (at small $t$ barely noised, at large
+   $t$ almost pure noise).
+4. **Ask the model to predict the noise**: $\hat\epsilon = \epsilon_\theta(x_t, t, c)$,
+   conditioned on the caption $c$ (`"sksgirl"` or `"woman"`).
+5. **The loss is the error on the noise**, $\lVert \epsilon - \hat\epsilon\rVert^2$
+   — a per-element MSE in *latent* space, **not** a comparison of rendered images.
+
+So when we said *"loss_her = how far output drifts from her photo"* that was
+shorthand: the gradient signal is *"given this caption, at this noise level, did
+you correctly identify the noise on **her** latent?"* Learning to denoise her
+latents *across all timesteps* is what binds `sksgirl` to her — and doing the same
+for generic `woman` latents is what the prior-preservation term protects.
+
+Two notes on modern variants:
+
+- **Velocity / flow-matching parameterisation.** Newer models (including
+  rectified-flow systems like Flux and several video models) don't predict
+  $\epsilon$ directly; they predict a **velocity** $v$ — the target is
+  $v = \alpha_t \epsilon - \sigma_t x_0$ (or, in flow matching, the straight-line
+  drift $x_1 - x_0$ between noise and data). The *shape* is identical — an MSE
+  between a predicted and a target vector, $\lVert v - v_\theta(x_t,t,c)\rVert^2$
+  — only the regression target changes. Every conclusion in this chapter is
+  unchanged; substitute $v$ for $\epsilon$.
+- **Why it's noise, not pixels.** Training on the final image would require running
+  the full multi-step sampler *inside* every gradient step (slow, unstable). The
+  score-matching trick reduces the whole generative problem to **one-step
+  supervised regression at a random noise level** — cheap, and what makes training
+  these models tractable at all.
 
 Two details that make or break identity fidelity in practice:
 
@@ -3569,3 +3644,574 @@ branch as infrastructure, not a competitor.
 > bootstrap its own superhuman training data. The cheap-but-precise signal is the
 > whole game — the same moral as the verifiable-reward RL in [[code-world-models]]
 > and the disciplined scaffolding of [[the-agent-harness]].
+
+# Chapter 8: Not Forgetting — Catastrophic Forgetting and the SFT → RL → SFT Loop
+
+Reinforcement learning is wonderful at *amplifying* one behaviour and terrible at
+*preserving* everything else. Push a pretrained model hard on a single rewarded
+skill — call it $A$ — and it does get much better at $A$; but the same parameters
+that encode $A$ also encode the model's other capabilities $B, C, D, E$, and those
+quietly degrade. This chapter is about the engineering that stops a specialised
+model from becoming a *narrow* one: the **consolidation dataset**, the three
+preservation knobs (**KL**, **replay loss**, **post-RL SFT**), and the full
+$\text{SFT} \to \text{RL} \to \text{SFT}$ loop that frontier labs actually run. The
+central tension is between **exploration** (letting RL move far enough to discover
+something genuinely new) and **preservation** (not forgetting what you already
+knew) — and the whole recipe is an attempt to sit between the two. It is the same
+catastrophic-forgetting problem met in the vision setting of [[dreambooth]], now in
+language-model post-training, and it extends the RL / entropy-collapse machinery
+of [[code-world-models]].
+
+## The forgetting phenomenon: what RL on one skill does to the others
+
+Start from a model that has been supervised-fine-tuned to be competent across a
+spread of skills:
+
+$$
+\text{SFT}_1 : \quad A, B, C, D, E \text{ all usable.}
+$$
+
+Now run RL with a reward that only measures $A$ (say, passing a code test, or a
+verifier accepting a proof — the verifiable-reward setting of
+[[code-world-models]]). The gradient only ever points "towards more $A$," so the
+update drifts the shared parameters into a region that is excellent for $A$ and
+incidentally worse for the rest:
+
+$$
+\text{RL on } A : \quad A \uparrow\uparrow, \qquad B, C, D, E \downarrow .
+$$
+
+This is **catastrophic forgetting** — the continual-learning failure where learning
+a new task overwrites the representations an old task relied on. It is not a bug in
+the reward; it is a direct consequence of *one objective* steering *shared weights*.
+The naive fix — "just SFT on $B, C, D, E$ afterwards to bring them back" — has a
+symmetric failure: train only on the old skills and you pull the parameters back
+out of the $A$-region, so now
+
+$$
+\text{SFT on } B,C,D,E \text{ only}: \quad A \downarrow, \quad B, C, D, E \uparrow .
+$$
+
+You have merely swapped which capability you sacrificed. The problem is never "how
+do I train $A$" or "how do I restore $B,C,D,E$" in isolation; it is how to hold
+*both* in the same set of weights at once.
+
+## The consolidation dataset: a mixture, never the winners alone
+
+The repair stage after RL is a supervised phase usually called **consolidation SFT**
+or **SFT2**. Its dataset is the whole trick, and the rule is: it must be a
+**mixture**, never the RL winners alone.
+
+$$
+\boxed{\;\mathcal{D}_{\text{SFT2}} \;=\; \underbrace{\mathcal{D}_A^{\text{RL winners}}}_{\text{keep/distill the new } A}
+\;+\; \underbrace{\mathcal{D}_{B,C,D,E}^{\text{general / replay}}}_{\text{restore breadth}}\;}
+$$
+
+The first term is harvested from RL itself: you keep the **high-reward
+trajectories** — the proofs that verified, the solutions that passed — and treat
+them as gold supervised targets. This is exactly the *bootstrapping of verified
+trajectories* / expert-iteration move from [[code-world-models]]. The second term
+is **replay** — a slice of the original general/pretraining-style data — whose only
+job is to say "and keep being good at everything else." Train on the union and the
+single instruction to the model is:
+
+> Keep the new thing you learned in $A$, *while* restoring the other capabilities —
+> ideally ending at $A \uparrow, B \uparrow, C \uparrow, D \uparrow, E \uparrow$.
+
+The mixture ratio is a live knob with two failure modes at the extremes. Too heavy
+on general/replay data (e.g. $90\%$ general $+\,10\%$ RL winners) and SFT2 washes
+the RL gains back out, $A\uparrow\uparrow \to A\uparrow$. Too heavy on RL winners
+and SFT2 *narrows* the policy further instead of broadening it — you have just done
+more specialisation under a supervised label.
+
+## Three knobs for preservation: KL, replay loss, post-RL SFT
+
+There are three distinct mechanisms for not-forgetting, and they operate at
+different points and in different currencies. It is worth separating them cleanly
+because they are easy to conflate:
+
+$$
+\begin{aligned}
+\textbf{KL penalty} &:\quad \text{stay behaviourally close to the old policy's output distribution} \\
+\textbf{replay / SFT loss} &:\quad \text{explicitly rehearse the old capabilities on old data} \\
+\textbf{post-RL SFT (SFT2)} &:\quad \text{consolidate new + old after exploration is finished}
+\end{aligned}
+$$
+
+The **KL penalty** is the softest. It is added inside the RL objective itself,
+
+$$
+\mathcal{L} \;=\; \mathcal{L}_{\text{RL}} \;+\; \beta \, D_{\mathrm{KL}}\!\left(\pi_\theta \,\|\, \pi_{\text{ref}}\right),
+$$
+
+and it never mentions $B, C, D, E$ at all. It does not say "solve the old tasks"; it
+says "don't move your output distribution too far from the reference model
+$\pi_{\text{ref}}$." Breadth is preserved *indirectly*, as a side effect of staying
+near a model that already had breadth. This is the same $\beta\,D_{\mathrm{KL}}$ term
+that appears in the PPO-style objective in [[code-world-models]], here reread as a
+forgetting-control device.
+
+The **replay loss** is explicit: you literally include old-data examples and a
+supervised loss on them, so the model is *scored* on $B, C, D, E$ during training,
+not merely kept near a model that could do them.
+
+The **post-RL SFT** is the consolidation stage of the previous section — it acts
+*after* RL rather than during it. Crucially these three are not mutually exclusive;
+strong systems combine all three.
+
+## Approach 1 — fold preservation into RL
+
+The first way to use these knobs is to mix preservation **directly into RL**, so
+every update simultaneously improves $A$ and rehearses the rest:
+
+$$
+\mathcal{L} \;=\; \mathcal{L}_{\text{RL}} \;+\; \lambda \, \mathcal{L}_{\text{general}} .
+$$
+
+The gradient is then a sum of two pulls,
+
+$$
+\nabla \mathcal{L} \;=\; \nabla \mathcal{L}_{\text{RL}} \;+\; \lambda \, \nabla \mathcal{L}_{\text{general}},
+$$
+
+and the second term acts as a restoring force: whenever the RL gradient would move
+the weights in a way that hurts the old abilities, the general-loss gradient pushes
+back. You prevent drift **as it happens** rather than repairing it later.
+
+**Pros.** You reduce forgetting *during training itself*, hold broad capability
+throughout, and may skip a large repair stage entirely.
+
+**Cons.** The two objectives can fight. If RL wants
+$\theta \to \theta + \Delta\theta_A$ but the general-SFT term wants
+$\theta \to \theta - \Delta\theta_A$, the effective step is the partial
+cancellation $\Delta\theta = \Delta\theta_{\text{RL}} + \lambda\,\Delta\theta_{\text{SFT}}$ —
+weaker, so slower improvement on the new capability. In the limit $\lambda$ too
+large, RL barely changes the model at all. You have bought breadth at the price of
+depth, and — the subtler cost — at the price of *exploration*, which the next
+sections make the crux.
+
+## Approach 2 — RL first, then consolidation SFT
+
+The second way separates the stages in time:
+
+$$
+\text{SFT}_1 \;\to\; \text{RL (specialise / discover aggressively)} \;\to\; \text{SFT}_2 .
+$$
+
+RL is allowed to search freely — "forget about preserving everything perfectly for a
+moment; go find really strong $A$-strategies" — and may discover several distinct
+good behaviours $A_1, A_2, A_3$. Only then do you build the mixture dataset
+$\mathcal{D}_{\text{SFT2}} = \{A_1, A_2, A_3\} \cup \mathcal{D}_{\text{general}}$ and
+consolidate the discoveries and the old breadth into one balanced policy.
+
+**Pros.** RL explores without fighting a general-data gradient on every step, so it
+can reach stronger behaviours; SFT2 then "compiles" those discoveries into a stable,
+cheap-to-sample policy *and* restores breadth in one pass.
+
+**Cons.** The RL checkpoint can drift far before you repair it, and a badly balanced
+SFT2 can partially undo the RL gains (the mixture-ratio failure modes from above).
+
+## Why separating the stages buys exploration
+
+Here is the point that is easy to get backwards. It is tempting to think
+simultaneous replay (Approach 1) is the one that "keeps the model broad, so it won't
+collapse into a narrow region." For *preservation* that is true. But for
+*exploration* the causality runs the other way, and that is precisely why one
+sometimes prefers $\text{SFT}_1 \to \text{RL} \to \text{SFT}_2$.
+
+With simultaneous replay the update is $\Delta\theta = \Delta\theta_{\text{RL}} + \lambda\,\Delta\theta_{\text{SFT}}$:
+the RL pull says "go over here, this behaviour earns much more reward," while the
+SFT pull says "don't move too far, keep doing all the old behaviours." Safer — but if
+a genuinely strong new strategy lives *far* from the initial SFT policy,
+
+$$
+\theta_{\text{SFT}} \;\longrightarrow\; \theta^{*}_{\text{new}} \quad (\text{a long way off}),
+$$
+
+the replay term keeps hauling you back toward $\theta_{\text{SFT}}$ and you may
+**never reach** $\theta^{*}_{\text{new}}$. Separating the stages removes that leash
+*during the search*: RL is free to travel to $\theta^{*}_{\text{new}}$, and only
+afterwards does SFT2 pull the consolidated model back toward breadth. The logic is
+"RL gets freedom to explore $\to$ SFT2 consolidates what was worth keeping," rather
+than constraining the explorer on every step.
+
+## The catch: SFT2 cannot recover what RL never discovered
+
+Separation is not a free lunch, and this is the sharpest caveat in the chapter.
+SFT2 can only consolidate trajectories that **actually exist** — the RL winners you
+harvested. If RL collapses its policy before it explores, those winners were never
+generated, and no amount of later supervised training conjures them back.
+
+Concretely, suppose $A_1, A_2, A_3, A_4$ are all viable strategies and $A_4$ is the
+best. If RL suffers **entropy collapse** (the diversity-loss failure of
+[[code-world-models]]) and locks onto, schematically, $P(A_1) \approx 0.999$ early,
+it may never *sample* $A_4$ and so never learn it is better. SFT2 can afterwards say
+"here are the $B,C,D,E$ examples, be broad again" — but it can never say "here is the
+excellent $A_4$ trajectory you never discovered." Restoration is possible;
+*retroactive discovery* is not.
+
+The consequence is that even in the "free RL" phase you still do **not** want
+unconstrained collapse. You keep the usual exploration regularisers running — a KL
+term, PPO clipping, diverse prompts, sampling temperature, an entropy bonus — not to
+preserve old skills this time, but to keep the policy *exploring* long enough to
+find $A_4$ in the first place. The idealised phase is therefore:
+
+$$
+\text{SFT}_1 \to \underbrace{\text{RL with enough regularisation to keep exploring}}_{\text{but not so much it cannot move}} \to \text{SFT}_2\,(\text{RL discoveries} + \text{broad data}).
+$$
+
+## Is SFT2 mandatory? The iterative distillation view
+
+No — a separate "recovery SFT" every time is not required. After
+$\text{SFT}_1 \to \text{RL on } A \to \text{harvest high-reward } A \text{ samples}$
+you have two legitimate exits:
+
+1. **Keep the RL checkpoint as-is.** If RL was run with good KL/replay
+   regularisation, the final checkpoint may already be the best production model;
+   no SFT2 needed.
+2. **Distill into the next model.** More commonly the RL phase is treated as
+   *search*, and its winners are used to build the *next* model's supervised set
+   rather than to patch the current one in place:
+
+$$
+M_0 \xrightarrow{\text{RL / search}} \text{good trajectories}, \qquad
+\mathcal{D}_{\text{new}} = \mathcal{D}_{\text{old SFT}} + \mathcal{D}_{\text{good trajectories}}, \qquad
+M_1 = \text{SFT}(\mathcal{D}_{\text{new}}),
+$$
+
+then $M_1 \xrightarrow{\text{RL again}} M_2$, and so on. This generalises to the
+full iterative loop frontier labs run:
+
+$$
+\text{SFT} \to \text{RL / search} \to \text{harvest winners} \to \text{SFT / distill} \to \text{RL} \to \cdots
+$$
+
+with KL and replay active throughout to keep each RL leg from destroying what the
+previous legs built. A subtlety worth internalising: often much of the end-to-end
+gain is actually realised by the **supervised training on the discovered
+trajectories**, with RL playing the role of a *discovery engine* that surfaces
+targets SFT then locks in cheaply.
+
+## The tradeoff in one line, and the mental model
+
+Everything above collapses to a single axis:
+
+$$
+\underbrace{\text{preserve too strongly}}_{\Rightarrow\ \text{less new learning}}
+\qquad\text{versus}\qquad
+\underbrace{\text{optimise too aggressively}}_{\Rightarrow\ \text{forgetting / over-specialisation / entropy collapse}} .
+$$
+
+The recipe is the art of sitting between them: **enough constraint to avoid
+collapse, enough freedom to discover genuinely new behaviour.** The clean mental
+model for the three supervised/RL roles is:
+
+$$
+\text{SFT}_1 = \textbf{teach} \;\longrightarrow\; \text{RL} = \textbf{explore / optimise} \;\longrightarrow\; \text{SFT}_2 = \textbf{consolidate} ,
+$$
+
+and in strong systems this is not run once but iterated, $\text{SFT} \to \text{RL} \to \text{SFT} \to \text{RL} \to \cdots$.
+
+> $\text{SFT} \to \text{RL} \to \text{SFT}_2$ is usually the sensible default — SFT
+> teaches a strong starting policy, RL explores freely for better behaviour, and a
+> *mixture* consolidation set ($\mathcal{D}_A^{\text{RL winners}} + \mathcal{D}^{\text{general}}$)
+> both distills the win and restores breadth. But it is not automatically best:
+> SFT2 too heavy on general data washes out the RL gain, too heavy on winners
+> narrows the policy further, and — the hard constraint — SFT2 can only consolidate
+> what RL was free enough to discover. Keep KL / replay / entropy regularisation
+> alive during RL not only to remember the old skills but to keep exploring long
+> enough to find the new one.
+
+---
+
+# Chapter 9: Where to Spend Computation — Depth, Chain-of-Thought, Looping, and the Harness
+
+Almost every modern AI system is the *same* object — an autoregressive Transformer
+$f_\theta(\text{context})$ — made to do almost everything: reason, search, remember,
+orchestrate tools. This chapter is the synthesis: it separates the **four distinct
+places** where such a system can spend extra computation when you want it to "think
+longer," shows why each one has a completely different *hardware* and *memory*
+signature, and ends with the research question that ties them together — **which
+computation should happen at which level?** It pulls together the GPU/attention
+mechanics of [[long-contexts]], the agent scaffold of [[the-agent-harness]], and the
+discovery-engine view of RL from [[code-world-models]], and reads them as four rungs
+of one ladder. The framing follows the systems researcher Zhang's argument that we
+currently mismatch task to machinery almost everywhere.
+
+## The four levels where extra computation can live
+
+Stack them from innermost to outermost:
+
+$$
+\boxed{
+\begin{array}{lll}
+\textbf{Level 1} & \text{Transformer depth} & \text{one forward pass through } L \text{ layers}\\[4pt]
+\textbf{Level 2} & \text{chain-of-thought} & \text{generate more tokens}\\[4pt]
+\textbf{Level 3} & \text{looped / latent reasoning} & \text{more iterations in representation space}\\[4pt]
+\textbf{Level 4} & \text{harness / agent / RLM} & \text{more model calls, tools, recursion, search}
+\end{array}
+}
+$$
+
+The key move of the chapter is to stop treating "think longer" as one dial. Each
+level buys more computation in a different *currency*, and each one stresses the
+hardware differently — some are **compute-bound**, some are **memory-bandwidth-bound**,
+some mostly waste wall-clock on coordination. Getting the match right is where the
+performance is.
+
+## Level 1 — Transformer depth, and why decode is memory-bound
+
+A standard Transformer sends a representation through a fixed stack of layers:
+
+$$
+h \;\rightarrow\; F_1 \;\rightarrow\; F_2 \;\rightarrow\; \cdots \;\rightarrow\; F_L .
+$$
+
+Every output token gets exactly **one** traversal of those $L$ layers. The weights
+sit permanently in GPU **HBM** (high-bandwidth memory) during inference — but the
+compute units cannot do arithmetic on HBM-resident weights directly. Each weight
+tile must travel
+
+$$
+\text{HBM} \;\rightarrow\; \text{on-chip SRAM / cache} \;\rightarrow\; \text{Tensor Cores}
+$$
+
+before it can multiply anything. That data-movement path, not the raw FLOP count, is
+what governs cost — the same memory-hierarchy story that made FlashAttention
+necessary in [[long-contexts]]. Whether depth is cheap or expensive depends entirely
+on how many tokens share each weight read.
+
+**Prefill is compute-bound.** During prefill the whole prompt is processed together,
+
+$$
+X W, \qquad X \in \mathbb{R}^{N \times d},
+$$
+
+so one read of $W$ is amortised across all $N$ prompt tokens. High **arithmetic
+intensity** (FLOPs per byte of weight fetched) keeps the Tensor Cores busy — the GPU
+is doing what it is good at.
+
+**Low-batch decode is memory-bound.** Autoregressive decoding emits one token at a
+time:
+
+$$
+x W, \qquad x \in \mathbb{R}^{1 \times d}.
+$$
+
+Now you drag the *entire* parameter matrix out of HBM to produce a single token. The
+arithmetic intensity is terrible — you move huge amounts of weight data to do very
+little math — so decode is limited by memory bandwidth, not compute.
+
+**Continuous batching** is the fix: pack $B$ concurrently-active requests so they
+share one weight read,
+
+$$
+x W \;\longrightarrow\; X W, \qquad X \in \mathbb{R}^{B \times d}.
+$$
+
+Larger $B$ means more FLOPs per byte of weights fetched, pushing decode back toward
+compute-bound. But at long sequence lengths a *second* memory bottleneck appears: the
+**KV cache**. The per-layer key/value tensors live mostly in HBM, and every new query
+must read the relevant historical $K/V$ entries — the GQA/KV-cache pressure analysed
+in [[long-contexts]]. So Level 1 has two memory walls: the weights (relieved by
+batching) and the KV cache (which grows with every position).
+
+## Level 2 — Chain-of-thought: more tokens, more sequential passes
+
+An ordinary reasoning model buys extra computation the crudest way — by emitting more
+tokens:
+
+$$
+r_1, r_2, \ldots, r_T .
+$$
+
+Each reasoning token makes a *full* trip through all $L$ layers to produce the next:
+
+$$
+r_t \;\rightarrow\; F_1 \;\rightarrow\; \cdots \;\rightarrow\; F_L \;\rightarrow\; r_{t+1} .
+$$
+
+So the identity is simply
+
+$$
+\boxed{\;\text{more CoT} \;=\; \text{more sequential decode passes}\;}.
+$$
+
+This is doubly expensive. Decode is inherently **sequential** (token $t+1$ needs
+token $t$) and, per Level 1, each of those passes is bandwidth-limited. Worse, every
+reasoning token becomes another sequence position, so it *enlarges the KV cache* —
+the cost of thinking longer at this level compounds in memory as well as time.
+
+## Level 3 — Latent / recurrent / looped reasoning
+
+A **looped Transformer** reuses the same block repeatedly, feeding its own output
+back as input:
+
+$$
+h^{(r+1)} \;=\; F_\theta\!\left(h^{(r)}\right).
+$$
+
+Instead of externalising every intermediate step as an English token, the system
+manipulates **latent vectors** in place. The contrast with CoT is the crux of the
+level:
+
+$$
+\boxed{\;\text{CoT} \;=\; \text{sequential computation through \textbf{token} space}\;}
+$$
+
+$$
+\boxed{\;\text{looping} \;=\; \text{sequential computation through \textbf{representation} space}\;}.
+$$
+
+Because the loop never emits tokens, it can replace thousands of reasoning tokens
+with a handful of latent iterations — and crucially avoid the corresponding
+**KV-cache growth** that Level 2 incurs.
+
+**Weight sharing cuts unique storage.** Looping also lets you reuse one small block
+many times rather than storing many distinct layers:
+
+$$
+60 \text{ unique layers} \;\longrightarrow\; 6 \text{ layers} \times 10 \text{ loops}.
+$$
+
+But — the honest caveat — this does **not** automatically cut HBM *traffic*. The same
+recurrent weights may still have to be re-fetched every loop unless enough of them
+stay resident in cache. Fewer unique parameters stored $\ne$ fewer bytes moved.
+
+**Why it can fit GPUs better.** If each loop operates over *many* latent positions at
+once,
+
+$$
+H \in \mathbb{R}^{N \times d},
+$$
+
+then recurrent reasoning becomes large, dense matrix multiplications with high
+arithmetic intensity — much friendlier to Tensor Cores than one-token-at-a-time CoT.
+The ambition is therefore
+
+$$
+\boxed{\;\text{bandwidth-heavy token reasoning} \;\longrightarrow\; \text{dense latent FLOPs}\;},
+$$
+
+trading a memory-bound workload for a compute-bound one that modern hardware prefers.
+
+## Level 4 — Harness, agents, and Recursive Language Models
+
+The outermost level treats the model as a black box $f_\theta(\text{context})$ and
+asks how *repeated calls* to it are composed — the scaffold studied in
+[[the-agent-harness]]. A standard coding agent is a loop:
+
+$$
+\text{LLM} \;\rightarrow\; \text{tool} \;\rightarrow\; \text{LLM} \;\rightarrow\; \text{tool} \;\rightarrow\; \cdots
+$$
+
+Most current harnesses carry the **entire history** forward as the next prompt:
+
+$$
+C_t = [\,\text{user},\; \text{model actions},\; \text{tool calls},\; \text{tool outputs},\; \ldots\,],
+$$
+
+and then feed $C_t$ back in — the **trajectory-as-prompt** design. As the trajectory
+grows enormous, systems resort to **compaction**,
+
+$$
+\text{large context} \;\longrightarrow\; \text{summary},
+$$
+
+which saves context budget but *loses information* — the context-management tradeoff
+from [[the-agent-harness]].
+
+**RLMs change the memory architecture.** A **Recursive Language Model** moves most of
+the state *out* of the Transformer context and into an external computational
+environment — files, Python variables, databases, sub-agent outputs — and has the
+model write *code* to access only what it needs:
+
+$$
+\{\,\text{files},\; \text{Python variables},\; \text{databases},\; \text{sub-agent outputs}\,\}.
+$$
+
+```python
+chunks  = split(document)
+answers = [call_agent(chunk) for chunk in chunks]
+final   = aggregate(answers)
+```
+
+Here code becomes the model's orchestration language. The model can recursively
+invoke other model calls,
+
+$$
+A(P) \;\rightarrow\; A(P_1),\, A(P_2),\, A(P_3),
+$$
+
+and those sub-agents may recurse again,
+
+$$
+A(P_1) \;\rightarrow\; A(P_{11}),\, A(P_{12}),
+$$
+
+— hence *Recursive* Language Model. A system like **Prime Agent** pushes this further
+by exposing something close to an **IPython environment** as the core interface,
+rather than handing the model dozens of disconnected top-level tools: instead of
+`trajectory as prompt`, the agent reads and writes an external, programmable memory.
+
+## The synthesis: which computation belongs at which level
+
+Collecting every form of "thinking longer" into one table:
+
+$$
+\boxed{
+\begin{array}{ll}
+\text{CoT} & \text{generate more tokens}\\[4pt]
+\text{looped transformer} & \text{perform more latent iterations}\\[4pt]
+\text{agent} & \text{perform more model / tool calls}\\[4pt]
+\text{RLM} & \text{write programs + recursively call models}\\[4pt]
+\text{swarm} & \text{run many agents / search branches}
+\end{array}
+}
+$$
+
+The research question that organises all of it is:
+
+$$
+\boxed{\;\text{which computation should happen at which level?}\;}
+$$
+
+The bet is that today's assignments are badly mismatched. Maybe something that now
+costs $1000$ CoT tokens should instead be $20$ latent iterations. Maybe something
+that now takes $20$ agent calls could be absorbed into internal routing plus
+recurrent depth. Maybe a trivial binary decision should not invoke an autoregressive
+LLM at all. Maybe long-context research should stop holding millions of historical
+tokens in the prompt and instead manipulate external memory with code — and maybe
+only genuinely hard search problems deserve an expensive agent **swarm**, which can
+burn enormous compute if its branches are not coordinated. The overarching point:
+we force *one architecture* to do everything, even when the task's computation,
+memory behaviour, and output format are poorly matched to it. The frontier is pulling
+those assumptions apart and choosing better homes for memory, control flow,
+recursion, and reasoning.
+
+## The one systems equation to keep
+
+If you keep a single equation from this chapter, make it:
+
+$$
+\boxed{\;\text{AI performance} \;\approx\; \dfrac{\text{useful computation}}{\text{expensive data movement} \;+\; \text{wasted search}}\;}.
+$$
+
+Each level attacks a different term of this ratio:
+
+- **GPU kernels** (FlashAttention, fused ops) attack the **data-movement** denominator.
+- **Loop transformers** change *how internal compute is allocated* — turning
+  bandwidth-bound token decode into compute-bound latent FLOPs.
+- **RLMs / harnesses** reorganise *how repeated model calls, memory, and tools* are
+  composed — shrinking the context you drag around.
+- **Agent swarms** attack the **search** side — but, uncoordinated, they inflate the
+  denominator instead, spending compute without buying useful work.
+
+> There is no single "think longer" knob. Extra computation can live in Transformer
+> **depth** (one pass, memory-bound at decode), in **chain-of-thought** (more
+> sequential token passes, growing the KV cache), in a **looped** model (more
+> iterations in representation space — dense, compute-bound, KV-cache-free), or in the
+> **harness** (more model/tool/recursive calls, with RLMs moving state into external
+> code-addressable memory). They have different hardware and memory signatures, so the
+> real lever is *placement* — maximise useful computation per unit of data movement and
+> wasted search by putting each piece of work at the level whose cost structure fits it.

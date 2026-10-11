@@ -60,23 +60,37 @@ nav.secs a.active{color:var(--accent-ink);background:var(--accent-soft)}
 .hero h1{font-size:clamp(30px,5vw,50px);letter-spacing:-.015em;max-width:20ch}
 .hero .lede{font-size:clamp(18px,2.1vw,21px);color:var(--ink-soft);margin-top:22px}
 .hero .who{margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--faint)}
-section{padding:56px 0;border-bottom:1px solid var(--line);scroll-margin-top:62px}
-.part-label{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px}
-h2.part{font-size:clamp(26px,3.6vw,38px);letter-spacing:-.015em;margin-bottom:6px}
-h3.sub{font-size:clamp(21px,2.6vw,26px);margin:44px 0 4px;letter-spacing:-.01em}
+section{padding:74px 0;border-bottom:1px solid var(--line);scroll-margin-top:62px}
+.part-label{font-family:var(--mono);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+h2.part{font-size:clamp(26px,3.6vw,38px);letter-spacing:-.015em;margin-bottom:8px}
+h3.sub{font-size:clamp(20px,2.4vw,25px);margin:54px 0 6px;letter-spacing:-.01em}
 h3.sub .n{font-family:var(--mono);font-size:15px;color:var(--accent);font-weight:600;margin-right:10px}
 h4.mini{font-size:18px;margin:26px 0 6px}
-.lead-in{color:var(--ink-soft);font-size:19px;margin:12px 0 8px}
-.box{border-radius:12px;padding:18px 22px;margin:22px 0;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow)}
-.box .bt{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
-.box.def{border-left:4px solid var(--teal)} .box.def .bt{color:var(--teal)}
-.box.plain{border-left:4px solid var(--teal);background:var(--teal-soft)} .box.plain .bt{color:var(--teal)}
-.box.take{border-left:4px solid var(--accent);background:var(--accent-soft)} .box.take .bt{color:var(--accent-ink)}
-.box.work{border-left:4px solid var(--muted);background:var(--panel-2)} .box.work .bt{color:var(--muted)}
-.box.warn{border-left:4px solid var(--danger);background:var(--danger-soft)} .box.warn .bt{color:var(--danger)}
-.box.good{border-left:4px solid var(--good);background:var(--good-soft)} .box.good .bt{color:var(--good)}
+.lead-in{color:var(--ink-soft);font-size:19px;margin:14px 0 30px;max-width:64ch}
+/* Box hierarchy — tiered so the page has rhythm instead of a wall of identical cards.
+   def: calm flat prose (frequent) · plain/take: tinted emphasis · work: neutral panel
+   for numbers/tables · good/warn: the only floating cards, reserved for the contrast pair. */
+.box{border-radius:11px;padding:16px 20px;margin:22px 0;border:1px solid var(--line);background:var(--panel)}
+.box .bt{font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;font-weight:700;margin-bottom:9px;display:flex;align-items:center;gap:8px}
 .box p:last-child{margin-bottom:0}
 .box .term{font-family:var(--serif);font-weight:600;font-style:italic}
+/* definition — no card at all: a labelled left rule over open prose */
+.box.def{border:none;border-radius:0;background:none;box-shadow:none;padding:2px 0 2px 22px;border-left:3px solid var(--teal);margin:26px 0}
+.box.def .bt{color:var(--teal)}
+/* plain English — the intuition beat: soft tint, flat */
+.box.plain{border:1px solid transparent;border-left:3px solid var(--teal);background:var(--teal-soft);box-shadow:none}
+.box.plain .bt{color:var(--teal)}
+/* the numbers — a quiet neutral panel that holds tables */
+.box.work{border:1px solid var(--line);border-left:3px solid var(--line-strong);background:var(--panel-2);box-shadow:none}
+.box.work .bt{color:var(--muted)}
+/* design rule — the takeaway: accent tint, flat */
+.box.take{border:1px solid transparent;border-left:3px solid var(--accent);background:var(--accent-soft);box-shadow:none}
+.box.take .bt{color:var(--accent-ink)}
+/* good / bad — the contrast pair: the only boxes that float */
+.box.good{border:1px solid transparent;border-left:3px solid var(--good);background:var(--good-soft);box-shadow:var(--shadow)}
+.box.good .bt{color:var(--good)}
+.box.warn{border:1px solid transparent;border-left:3px solid var(--danger);background:var(--danger-soft);box-shadow:var(--shadow)}
+.box.warn .bt{color:var(--danger)}
 .verdict{border:1px solid var(--accent);border-left:6px solid var(--accent);border-radius:14px;background:linear-gradient(135deg,var(--accent-soft),var(--panel) 72%);
   padding:24px 26px;margin:26px 0;box-shadow:var(--shadow)}
 .verdict .vt{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink);font-weight:700;margin-bottom:10px}
@@ -197,7 +211,7 @@ html{scroll-behavior:smooth}
       harness. Let's define it once, precisely, before building any of it.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — the agent harness</div>
+      <div class="bt">Definition — the agent harness</div>
       <p>An <span class="term">agent harness</span> (also called the <span class="term">scaffold</span> or the
         <span class="term">agent-computer interface</span>) is <b>everything around the model weights that lets the
         model act</b>: the loop that calls the model and runs what it asks; the <b>tools</b> it acts through; the
@@ -208,7 +222,7 @@ html{scroll-behavior:smooth}
     </div>
 
     <div class="box plain">
-      <div class="bt">▸ In plain English</div>
+      <div class="bt">In plain English</div>
       <p>Imagine a brilliant new hire who can reason about anything but has no hands, no memory between meetings, and
         no idea what's safe to touch. The harness gives them hands (tools), a desk with only the right papers on it
         (context), a rule about which drawers need a manager's sign-off (permissions), a way to check their own work
@@ -235,7 +249,7 @@ html{scroll-behavior:smooth}
       simplest thing that works, and only climb to a full loop when the task is genuinely open-ended.</p>
 
     <div class="box warn">
-      <div class="bt">▸ The failure this prevents</div>
+      <div class="bt">The failure this prevents</div>
       <p>The classic way an agent project dies: you wire up the exciting part (model + a big pile of tools + a loop)
         first, watch a demo succeed once, and only later discover it loops forever on the second task, silently
         "believes" it fixed a bug it never re-tested, floods its own context until it forgets the goal, or runs
@@ -266,7 +280,7 @@ html{scroll-behavior:smooth}
     </div>
 
     <div class="box take">
-      <div class="bt">▸ How to read the diagram</div>
+      <div class="bt">How to read the diagram</div>
       <p>At <b>run time</b> a call flows 1→8 and loops. But you <b>build</b> in a different order: the loop and a
         couple of tools first so anything runs at all, then the <em>permission cage</em> (§5) and <em>verification</em>
         (§6) <em>before</em> you widen autonomy — because those are what let you trust a longer leash. The "Build
@@ -285,7 +299,7 @@ html{scroll-behavior:smooth}
       difficulty is entirely in the stop condition and in making sure every turn is anchored to reality.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — the agent loop</div>
+      <div class="bt">Definition — the agent loop</div>
       <p>The <span class="term">agent loop</span> is the controller that (1) calls the model, (2) executes whatever
         tools the model requested, (3) appends the results to the conversation, and (4) calls the model again —
         repeating until the model returns an answer with no tool calls, or a budget/stop condition fires. This is the
@@ -316,7 +330,7 @@ messages = [system_prompt, user_goal]
         <span class="k">return</span> escalate_to_human()</pre>
 
     <div class="box plain">
-      <div class="bt">▸ In plain English — the one rule that makes it work</div>
+      <div class="bt">In plain English — the one rule that makes it work</div>
       <p>Every turn, the agent must <b>gain ground truth from the environment</b> — the actual tool result, the actual
         test output — not its own guess about what happened. The loop is a feedback controller: it only converges if
         it can see the error between "what I intended" and "what actually happened." An agent that acts and then
@@ -325,13 +339,13 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Good</div>
+        <div class="bt">Good</div>
         <p>"Fix the failing tests" → run the suite → read the errors → search the source → edit → <b>re-run the
           suite</b> → stop when green. A real stop condition (tests pass) and a budget cap with a human-escalation
           exit if it stalls.</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Bad</div>
+        <div class="bt">Bad</div>
         <p>A hardcoded 5-step pipeline for an open-ended task (too rigid), or a loop with no environment feedback where
           the model declares victory without re-running anything (never converges), or no cap at all (runaway cost,
           "compounding errors").</p>
@@ -339,7 +353,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box take">
-      <div class="bt">▸ Design rule</div>
+      <div class="bt">Design rule</div>
       <p>Give the loop <b>two</b> stop conditions: a <em>success</em> condition read from the environment (tests green,
         goal state reached) and a <em>safety</em> condition (max steps / token budget / wall-clock) that escalates to
         a human instead of spinning. And prefer a workflow over a loop whenever you can actually predict the steps —
@@ -357,7 +371,7 @@ messages = [system_prompt, user_goal]
       model size is the strongest single result in the field.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — the Agent-Computer Interface (ACI)</div>
+      <div class="bt">Definition — the Agent-Computer Interface (ACI)</div>
       <p>The <span class="term">ACI</span> (SWE-agent, Princeton, NeurIPS 2024) is the purpose-built set of commands
         and feedback a model acts through — the agent's equivalent of a human's GUI. The thesis: <b>LLM agents are a
         new category of end user</b>, and just as a good UI makes a person more capable without making them smarter, a
@@ -366,7 +380,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box work">
-      <div class="bt">▸ The numbers — interface moves the score at fixed model</div>
+      <div class="bt">The numbers — interface moves the score at fixed model</div>
       <p>SWE-agent's ablation on SWE-bench Lite (same model throughout) is the receipt everyone cites:</p>
       <div class="tblwrap">
         <table class="led">
@@ -395,7 +409,7 @@ messages = [system_prompt, user_goal]
     </ul>
 
     <div class="box plain">
-      <div class="bt">▸ Poka-yoke — make mistakes impossible, don't just warn against them</div>
+      <div class="bt">Poka-yoke — make mistakes impossible, don't just warn against them</div>
       <p>The Japanese manufacturing term for "mistake-proofing." If the agent keeps passing relative paths that break,
         don't add a warning to the docstring — change the tool signature to <em>require an absolute path</em> so the
         wrong call can't be expressed. Anthropic fixed a whole class of pathing errors this way. The best tool
@@ -403,7 +417,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box warn">
-      <div class="bt">▸ The failure this prevents</div>
+      <div class="bt">The failure this prevents</div>
       <p>Too many overlapping tools "distract agents from pursuing efficient strategies"; opaque IDs and cryptic
         tracebacks cause failed retrievals and unrecoverable loops; whole-file edits invite lazy "// rest unchanged"
         rewrites. Anthropic reports that <em>small refinements to tool descriptions alone</em> pushed Sonnet to
@@ -421,7 +435,7 @@ messages = [system_prompt, user_goal]
       fills</em>, and managing it well is most of what separates a coherent long run from a confused one.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — context engineering &amp; context rot</div>
+      <div class="bt">Definition — context engineering &amp; context rot</div>
       <p><span class="term">Context engineering</span> (Anthropic) is choosing the smallest set of high-signal tokens
         to put in each call. Its central hazard is <span class="term">context rot</span>: "as the number of tokens in
         the context window increases, the model's ability to accurately recall information decreases." A related, older
@@ -439,7 +453,7 @@ messages = [system_prompt, user_goal]
     </ul>
 
     <div class="box work">
-      <div class="bt">▸ Try it — the context-budget simulator</div>
+      <div class="bt">Try it — the context-budget simulator</div>
       <p>A long run adds tokens every step. Watch the window fill, compaction trigger, and effective recall rot. This
         is a teaching heuristic, not a real model — but the shape is real.</p>
       <div class="calc">
@@ -461,13 +475,13 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Good</div>
+        <div class="bt">Good</div>
         <p>Persistent rules live in a <span class="mono">CLAUDE.md</span> file (reloaded every call), not in fragile
           chat history. MCP tool definitions load <em>on demand</em> so only names cost tokens until used. Critical
           instructions sit at the <em>edges</em> of the prompt where recall is best.</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Bad</div>
+        <div class="bt">Bad</div>
         <p>Dumping a whole repo or a 200k-token file into the prompt up front. The window refills the instant it's
           summarized — "compaction thrash" — and the agent forgets the goal it was given in the middle of a wall of
           retrieved text.</p>
@@ -475,7 +489,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box take">
-      <div class="bt">▸ System-prompt altitude</div>
+      <div class="bt">System-prompt altitude</div>
       <p>Anthropic's "Goldilocks" rule: a system prompt should be neither brittle hardcoded logic nor vague
         hand-waving, but "specific enough to guide behavior, flexible enough to give strong heuristics," organized
         with clear section headers. Start minimal; add a rule only when you've <em>seen</em> the failure it fixes.</p>
@@ -492,7 +506,7 @@ messages = [system_prompt, user_goal]
       is the most expensive lever in the harness, and it helps only for the right shape of work.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — orchestrator–workers</div>
+      <div class="bt">Definition — orchestrator–workers</div>
       <p>In the <span class="term">orchestrator–workers</span> pattern (Anthropic), a <b>lead agent</b> decomposes the
         task and spawns <b>sub-agents</b>, each in its <em>own isolated context window</em>, each returning only a
         "condensed, distilled summary" (~1–2k tokens) rather than its full transcript. The point is <b>context
@@ -501,7 +515,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box work">
-      <div class="bt">▸ The numbers — worth it, but only sometimes</div>
+      <div class="bt">The numbers — worth it, but only sometimes</div>
       <p>From Anthropic's multi-agent research system:</p>
       <ul class="clean ok" style="margin-top:6px">
         <li><span class="ic">✓</span>A lead + sub-agents beat a single agent by <b>90.2%</b> on their research eval.</li>
@@ -512,13 +526,13 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Fan out when…</div>
+        <div class="bt">Fan out when…</div>
         <p>The work is <b>broad and parallelizable</b> and each strand is independent: researching many sources,
           searching a large codebase from several angles, reviewing a diff along several dimensions at once. Isolation
           helps and the strands don't need each other's intermediate state.</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Stay single-agent when…</div>
+        <div class="bt">Stay single-agent when…</div>
         <p>The work is <b>tightly interdependent</b> — most coding, where edit B depends on what edit A just did.
           Anthropic is explicit: multi-agent is "less effective for tightly interdependent tasks such as coding."
           Fanning those out means agents step on each other and you pay 15× for a worse result.</p>
@@ -526,7 +540,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box take">
-      <div class="bt">▸ Design rule</div>
+      <div class="bt">Design rule</div>
       <p>Reach for sub-agents only when <em>outcome value dominates token cost</em> and the task decomposes into
         independent, breadth-heavy strands. Keep each worker's return small (a summary, not a transcript), and never
         fan out interdependent edits. Autonomy scales cost super-linearly — spend it where isolation actually buys
@@ -544,7 +558,7 @@ messages = [system_prompt, user_goal]
       This component is what lets you widen the leash later without dread — so it comes early, not last.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — the safety cage</div>
+      <div class="bt">Definition — the safety cage</div>
       <p>Two layers. <span class="term">Permissions</span> decide <em>which actions need a human's sign-off</em>:
         side-effecting or irreversible actions (writes, shell, network, deploys) are gated behind approval modes and
         allowlists, with least privilege as the default. <span class="term">Sandboxing</span> decides <em>where code
@@ -571,13 +585,13 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Good</div>
+        <div class="bt">Good</div>
         <p>Every action runs in a per-session Docker sandbox (OpenHands does exactly this — arbitrary code "can be run
           safely without risking the host"). Reversible edits get a <b>checkpoint</b> before each write so the human
           can rewind; irreversible actions (DB writes, deploys, external APIs) always require explicit approval.</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Bad</div>
+        <div class="bt">Bad</div>
         <p>Full auto-approve (<span class="mono">bypassPermissions</span>) on a machine with production credentials and
           no sandbox. One prompt-injection in a fetched web page or a mis-parsed instruction and the agent runs
           <span class="mono">rm -rf</span> or exfiltrates a token — with nothing between intent and damage.</p>
@@ -585,7 +599,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box take">
-      <div class="bt">▸ Design rule — and its honest limit</div>
+      <div class="bt">Design rule — and its honest limit</div>
       <p>Default to least privilege and make the safe path the easy one (allowlists beat approval fatigue; a background
         classifier beats a blanket "yes"). But note the boundary: checkpoints can rewind <em>local files</em> — they
         <b>cannot</b> un-send an email or un-drop a table. Route anything with an external, irreversible effect through
@@ -603,7 +617,7 @@ messages = [system_prompt, user_goal]
       guessing whether it succeeded; with it, the environment tells it — and rejects bad actions before they land.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — the feedback loop</div>
+      <div class="bt">Definition — the feedback loop</div>
       <p><span class="term">Verification</span> connects the agent's actions to real environment signals — tests,
         linters, type-checkers, compilers — and <b>forces the agent to observe the result</b> before proceeding. The
         strongest form is a <span class="term">guardrail</span> that rejects a bad action <em>at the interface</em>
@@ -613,7 +627,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box work">
-      <div class="bt">▸ The exemplar — SWE-agent's pre-apply linter</div>
+      <div class="bt">The exemplar — SWE-agent's pre-apply linter</div>
       <p>When the agent edits a file, the edit tool runs a linter <em>before</em> the change is written:
         "Python files will be checked for syntax errors after the edit. If an error is found, the edit will not be
         executed" — and the tool shows the error, the proposed change, and the original so the agent can recover. That
@@ -623,20 +637,20 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Good</div>
+        <div class="bt">Good</div>
         <p>Edit → type-checker/linter runs → agent reads any error and fixes it → tests run → agent reads the result →
           only then declares done. Reflexion-style (Shinn et al.): on failure, the agent writes a short natural-language
           self-critique and retries with it in context.</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Bad</div>
+        <div class="bt">Bad</div>
         <p>Apply a diff blind and move on. The build breaks and the agent never learns — it carries a false "done" into
           the next step, and the error compounds. "It looks right" is not verification; running it is.</p>
       </div>
     </div>
 
     <div class="box take">
-      <div class="bt">▸ Design rule</div>
+      <div class="bt">Design rule</div>
       <p>Prefer guardrails that make a bad action <em>impossible to commit</em> over post-hoc detection. Every action
         the agent takes should produce an observable, machine-checkable signal — and the loop should be structured so
         the agent <em>must</em> read that signal before its next move. A harness with no verification is a very
@@ -654,7 +668,7 @@ messages = [system_prompt, user_goal]
       state that outlives any single window — and runs you can reproduce, resume, and fork.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — memory, three tiers</div>
+      <div class="bt">Definition — memory, three tiers</div>
       <p><span class="term">Scratchpad / notes</span>: files the agent writes to and reads back, "persisted to memory
         outside of the context window," enabling strategies impossible when everything must fit in one window.
         <span class="term">Project memory</span>: instructions and conventions loaded into <em>every</em> session (a
@@ -666,7 +680,7 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Good</div>
+        <div class="bt">Good</div>
         <p>Durable rules live in <span class="mono">CLAUDE.md</span> (loaded into every system prompt), not in chat
           that compaction will drop. Sessions are written to JSONL so <span class="mono">--continue</span>,
           <span class="mono">--resume</span> and <span class="mono">--fork-session</span> work. OpenHands makes an
@@ -674,7 +688,7 @@ messages = [system_prompt, user_goal]
           every run is exactly reproducible.</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Bad</div>
+        <div class="bt">Bad</div>
         <p>Relying on conversation history for anything that must persist. Claude Code warns early instructions "can
           get lost" in compaction — so a rule you stated once in turn 2 is gone by turn 40. Durable facts belong in a
           file, not in the transcript.</p>
@@ -682,7 +696,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box take">
-      <div class="bt">▸ Design rule</div>
+      <div class="bt">Design rule</div>
       <p>Anything that must survive a compaction or a restart lives <b>on disk</b>, not in context. Make the log the
         source of truth (state = a fold over events) and you get reproducibility, resume, and fork for free — the same
         discipline that makes a backtest trustworthy makes an agent run trustworthy.</p>
@@ -699,7 +713,7 @@ messages = [system_prompt, user_goal]
       thing. This component makes every run legible and grades the <em>whole</em> harness honestly.</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — traces &amp; agentic evals</div>
+      <div class="bt">Definition — traces &amp; agentic evals</div>
       <p><span class="term">Observability</span>: every action and observation is logged, with accumulated tokens and
         cost, so a run can be audited step by step (OpenHands' typed event stream <em>is</em> this — the audit log is
         the state). <span class="term">Agentic evaluation</span>: grading the harness on tasks that require the loop,
@@ -722,7 +736,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box work">
-      <div class="bt">▸ Track tokens as a first-class metric</div>
+      <div class="bt">Track tokens as a first-class metric</div>
       <p>Because token usage explained ~80% of performance variance in Anthropic's multi-agent evals, cost is not just
         a budget line — it's a <em>capability signal</em>. Log tokens per run alongside success rate, or you'll ship a
         harness that "improved" only by quietly spending 15× more.</p>
@@ -730,13 +744,13 @@ messages = [system_prompt, user_goal]
 
     <div class="grid2">
       <div class="box good">
-        <div class="bt">▸ Good</div>
+        <div class="bt">Good</div>
         <p>A trace per run (actions, observations, cost); the harness graded on SWE-bench Verified / Terminal-Bench
           with resolve@1 reported honestly; and per-component eval — Anthropic even lets agents "analyze your results
           and improve your tools for you."</p>
       </div>
       <div class="box warn">
-        <div class="bt">▸ Bad</div>
+        <div class="bt">Bad</div>
         <p>Grading the base model on a knowledge quiz and inferring agent capability. SWE-agent showed the interface
           alone moves resolve rate 3–8 points at fixed model — a static eval attributes harness bugs to the model and
           misses every real regression.</p>
@@ -754,7 +768,7 @@ messages = [system_prompt, user_goal]
       matters this much, why design it by hand at all?</p>
 
     <div class="box def">
-      <div class="bt">▸ Definition — automated design of agentic systems</div>
+      <div class="bt">Definition — automated design of agentic systems</div>
       <p>The insight behind <span class="term">ADAS</span> (Hu, Lu &amp; Clune, 2024): if agents are defined
         <em>in code</em> — prompts, tool wiring, control flow — then the harness itself is a <b>searchable design
         space</b>, not a fixed thing you author once. Their <em>Meta Agent Search</em> has a meta-agent program new
@@ -763,7 +777,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box work">
-      <div class="bt">▸ The lineage — search → self-edit → evolve</div>
+      <div class="bt">The lineage — search → self-edit → evolve</div>
       <ul class="clean step" style="margin-top:6px">
         <li><span class="ic">›</span><b>ADAS / Meta Agent Search</b> (arXiv:2408.08435) — search over agents-as-code; discovered scaffolds beat hand-built ones.</li>
         <li><span class="ic">›</span><b>Gödel Agent</b> (arXiv:2410.04444) — an agent that reads and rewrites <em>its own code</em> at runtime toward a high-level objective. The purest "meta harness" — and a research prototype, not production.</li>
@@ -772,7 +786,7 @@ messages = [system_prompt, user_goal]
     </div>
 
     <div class="box take">
-      <div class="bt">▸ Why this belongs in a harness doc</div>
+      <div class="bt">Why this belongs in a harness doc</div>
       <p>Two reasons. First, it is the strongest evidence for this document's thesis — DGM's 20%→50% swing came
         <em>entirely</em> from changing the scaffold, model fixed. Second, it clarifies the goal: a great harness is
         not a pile of features but a <em>design space</em> you can measure and move through. You may build it by hand

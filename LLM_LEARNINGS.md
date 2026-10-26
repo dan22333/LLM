@@ -117,6 +117,21 @@ an economic-link graph and trade the slow diffusion of shocks across it (the
   - Level 4 — Harness, agents, and Recursive Language Models
   - The synthesis: which computation belongs at which level
   - The one systems equation to keep
+- **Chapter 10: Scaling Laws — Compute Accounting, Chinchilla, and the Training–Inference Trade-off**
+  - The five equations to keep
+  - Where $6ND$ comes from
+  - Why input gradients are computed even though only weights update
+  - Why $6ND$ is only an approximation: projections vs attention mixing
+  - What a scaling law actually predicts
+  - The Chinchilla loss function and the meaning of $E$
+  - How scaling-law experiments are actually run
+  - Deriving compute-optimal $N$ and $D$
+  - The "20 tokens per parameter" rule
+  - Kaplan (2020) vs Chinchilla (2022)
+  - Fixed compute: what you lose by training longer
+  - Processed tokens vs unique tokens
+  - Inference-aware scaling — Beyond Chinchilla
+  - The three questions you must not conflate
 
 ---
 
@@ -4215,3 +4230,541 @@ Each level attacks a different term of this ratio:
 > code-addressable memory). They have different hardware and memory signatures, so the
 > real lever is *placement* — maximise useful computation per unit of data movement and
 > wasted search by putting each piece of work at the level whose cost structure fits it.
+
+---
+
+# Chapter 10: Scaling Laws — Compute Accounting, Chinchilla, and the Training–Inference Trade-off
+
+Chapter 2 touched scaling laws in one short section ([[code-world-models]]); this
+chapter is the full treatment. The single most important idea to hold onto up
+front is this: **scaling laws are empirical models, not laws of nature.** They are
+power-law curves *fitted* to the results of hundreds of training runs, and they
+earn their keep by letting you *predict* the loss of a run you have not yet paid
+for and *allocate* a compute budget intelligently. They do not guarantee how any
+particular architecture must behave, and they extrapolate at your own risk. With
+that caveat fixed, the chapter builds the machinery from the ground up: first the
+compute-accounting identity $C \approx 6ND$ and exactly where every factor comes
+from, then the Chinchilla loss model and how it is fitted, then the calculus that
+turns it into a compute-optimal recipe, and finally the question the session kept
+circling back to — *if training a model longer always helps, what exactly do you
+give up by doing it?*
+
+## The five equations to keep
+
+Everything below is in service of these five:
+
+$$
+\boxed{
+\begin{array}{ll}
+C_{\text{train}} \approx 6ND & \text{dense-Transformer training FLOPs}\\[5pt]
+L(N,D) = E + A N^{-\alpha} + B D^{-\beta} & \text{Chinchilla empirical loss model}\\[5pt]
+N_{\text{opt}} \propto C^{\,\beta/(\alpha+\beta)} & \text{compute-optimal parameter scaling}\\[5pt]
+D_{\text{opt}} \propto C^{\,\alpha/(\alpha+\beta)} & \text{compute-optimal data scaling}\\[5pt]
+C_{\text{lifetime}} \approx 6ND + 2N T_{\text{out}} & \text{training + lifetime inference}
+\end{array}}
+$$
+
+with $N$ = parameters, $D$ = tokens *processed* during training (repeats
+included), $C$ = FLOPs, $L$ = held-out loss, $E$ = fitted limiting loss,
+$\alpha,\beta$ = fitted exponents, $A,B$ = fitted coefficients, and $T_{\text{out}}$ =
+tokens the deployed model will ever generate.
+
+## Where $6ND$ comes from
+
+Take a single linear layer — the atom every Transformer is built from:
+
+$$
+y = W x, \qquad W \in \mathbb{R}^{m\times n}, \qquad N = mn .
+$$
+
+**Forward pass.** Each of the $m$ outputs is a dot product of length $n$: $n$
+multiplies and $n-1$ adds, i.e. $\approx 2n$ FLOPs. Across all $m$ outputs that is
+$\approx 2mn = 2N$ FLOPs per input vector.
+
+**Backward pass** does *two* distinct matrix multiplies. Writing $g =
+\partial L/\partial y$ for the gradient arriving from above:
+
+$$
+\frac{\partial L}{\partial x} = W^{\top} g
+\qquad\text{(pass the gradient to the previous layer)},
+$$
+
+$$
+\frac{\partial L}{\partial W} = g\, x^{\top}
+\qquad\text{(tell this layer how to update its weights)}.
+$$
+
+For a batch of $B$ token positions these become $Y = WX$, $dX = W^{\top}G$, $dW =
+GX^{\top}$, and the FLOP ledger per layer is:
+
+$$
+\begin{array}{lc}
+\textbf{operation} & \textbf{FLOPs per batch}\\[3pt]
+\text{forward } WX & 2NB\\
+\text{input-gradient } W^{\top}G & 2NB\\
+\text{weight-gradient } GX^{\top} & 2NB\\[3pt]
+\textbf{total} & \mathbf{6NB}
+\end{array}
+$$
+
+Why does the weight gradient cost $2NB$? Each weight accumulates one contribution
+per example,
+
+$$
+\frac{\partial L}{\partial W_{ij}} = \sum_{b=1}^{B} G_{ib}\, X_{jb},
+$$
+
+which is $B$ multiplies and $B-1$ adds $\approx 2B$ FLOPs per weight, and there are
+$N$ weights. (For a *single* example the weight-gradient outer product is only $N$
+multiplies — the clean $2N$-per-token figure is the large-batch matrix-multiply
+approximation.) If training processes $D$ tokens total in batches of $B$:
+
+$$
+\frac{D}{B}\cdot 6NB = \boxed{6ND}.
+$$
+
+So the famous constant decomposes as **2 forward + 4 backward** FLOPs per
+parameter per token.
+
+## Why input gradients are computed even though only weights update
+
+A natural objection: we only ever *update* weights, so why spend two-thirds of the
+backward budget computing $\partial L/\partial x$? Because backprop is the chain
+rule run **once, outside-in**, over a deep stack:
+
+$$
+h_\ell = W_\ell\, h_{\ell-1}.
+$$
+
+Layer $\ell$ needs the gradient $g_\ell$ flowing into it to compute *both*
+
+$$
+dW_\ell = g_\ell\, h_{\ell-1}^{\top}
+\qquad\text{and}\qquad
+g_{\ell-1} = W_\ell^{\top} g_\ell .
+$$
+
+That second quantity is precisely the gradient the *next-lower* layer needs to
+compute its own $dW_{\ell-1}$. The input-gradient multiply is what carries the
+chain rule down to the layer below; without it, every earlier layer would be
+blind. The network does **one** backward traversal, not a separate pass per layer,
+so the cost is $\approx 4N_{\text{total}}$ per token for the whole stack, giving
+$\approx 6N_{\text{total}}$ total. The only layer that may skip the input gradient
+is the very first, whose input is raw data with nothing beneath it to update.
+
+> Backprop is strictly more expensive than the forward pass — roughly $2\times$ —
+> because it does two jobs at once: it computes every parameter's gradient *and*
+> propagates the chain rule to the layers underneath.
+
+## Why $6ND$ is only an approximation: projections vs attention mixing
+
+$6ND$ counts only the *learned matrix multiplies*. A real Transformer also does
+attention mixing, normalisation, and activations. The one that actually matters at
+scale is attention mixing, because it scales with sequence length $T$ in a way the
+projections do not. For one layer of width $d$ and sequence length $T$:
+
+$$
+\begin{array}{lc}
+\textbf{operation} & \textbf{forward FLOPs}\\[3pt]
+\text{Q,K,V,output projections} & 8Td^2\\
+\text{MLP projections} & 16Td^2\\
+\text{attention scores } QK^{\top} & 2T^2 d\\
+\text{attention-weighted values} & 2T^2 d\\[3pt]
+\textbf{total} & 24Td^2 + 4T^2 d
+\end{array}
+$$
+
+The learned projections hold $N_{\text{layer}} \approx 12 d^2$ parameters, so
+$2 T N_{\text{layer}} \approx 24 T d^2$ — exactly the projection term, the part
+$6ND$ captures. The leftover $4T^2 d$ is attention mixing, which carries *no*
+parameters and so is invisible to $6ND$. Their ratio is clean:
+
+$$
+\boxed{\;\frac{C_{\text{attention mixing}}}{C_{\text{learned projections}}}
+\approx \frac{T}{6d}\;}
+$$
+
+For $d = 4096$:
+
+$$
+\begin{array}{cc}
+\textbf{context } T & \textbf{attention mixing as \% of projections}\\[3pt]
+2{,}048 & 8.3\%\\
+8{,}192 & 33.3\%\\
+32{,}768 & 133.3\%
+\end{array}
+$$
+
+So at moderate context the learned-matrix work dominates and $6ND$ is a fine
+first-order estimate; at very long context attention mixing becomes comparable or
+larger and $6ND$ undercounts. Normalisation is $O(Td)$, negligible against the
+$O(Td^2)$ projections at large $d$. And none of this is runtime — wall-clock also
+depends on memory bandwidth, the attention kernel, GPU utilisation, and
+communication, the whole memory-hierarchy story of [[long-contexts]].
+
+> Always separate **FLOPs** from **runtime**. $6ND$ is a budgeting tool for
+> first-order scaling, not a performance model; serious experiments account for
+> the real architecture and the real hardware.
+
+## What a scaling law actually predicts
+
+The general shape fitted in every scaling study is a shifted power law:
+
+$$
+\boxed{\;L(X) = E + A X^{-\alpha}\;}, \qquad \alpha > 0,
+$$
+
+where $X$ is parameters, data, or compute, $E$ is the limiting loss the fit
+implies, $A$ sets the scale of the *reducible* loss, and $\alpha$ is the rate of
+improvement. The exponent is negative because
+
+$$
+\frac{d}{dX} A X^{-\alpha} = -\alpha A X^{-\alpha-1} < 0,
+\qquad
+\frac{d^2}{dX^2} A X^{-\alpha} = \alpha(\alpha+1) A X^{-\alpha-2} > 0,
+$$
+
+i.e. loss falls but with **diminishing returns**: each doubling buys less than the
+last.
+
+**Doubling only shrinks the excess.** The subtlety that trips people up is that a
+constant *fractional* improvement applies to $L - E$, not to $L$:
+
+$$
+\frac{L(2N)-E}{L(N)-E} = \frac{A(2N)^{-\alpha}}{A N^{-\alpha}} = 2^{-\alpha}.
+$$
+
+For $\alpha = 0.3$, $2^{-0.3}\approx 0.812$ — the *excess* loss drops $\approx
+18.8\%$ per doubling. But total loss drops less because $E$ never moves. Worked
+example: $E=1$, $L(N)=2$, so excess $=1$. After doubling, excess $= 0.812$, so
+$L(2N)=1.812$ — total loss fell only $9.4\%$, not $18.8\%$.
+
+**Why log-log plots.** Subtract $E$ and take logs:
+
+$$
+\log(L-E) = \log A - \alpha \log N,
+$$
+
+a straight line of slope $-\alpha$. That is why scaling curves are drawn log-log
+and why a clean straight line is the signature of a power law. If a $10\times$
+increase halves the excess loss, then $10^{-\alpha}=0.5$, so $\alpha = -\log_{10}
+0.5 \approx 0.301$ — and note this is *measured from the slope*, not predicted by
+any theory.
+
+## The Chinchilla loss function and the meaning of $E$
+
+Hoffmann et al. (2022, "Chinchilla") fitted the two-variable version:
+
+$$
+\boxed{\;L(N,D) = E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}}\;}
+$$
+
+with approximate fitted values
+
+$$
+E = 1.69,\quad A = 406.4,\quad B = 410.7,\quad \alpha = 0.34,\quad \beta = 0.28
+$$
+
+(coefficients are tied to the paper's units and setup — do not treat them as
+universal). Read the three terms as: a **limiting loss** $E$, a
+**capacity penalty** $A N^{-\alpha}$ that shrinks as the model gets bigger, and a
+**data penalty** $B D^{-\beta}$ that shrinks as it sees more tokens. The additive,
+separable form is an *approximation that fits well*, not a theorem — a more general
+model could add an interaction term $\gamma N^{-p} D^{-q}$; the simple form is kept
+because it predicts the measurements.
+
+**What $E$ means.** Language is genuinely uncertain, so even a perfect next-token
+predictor has nonzero expected cross-entropy. For a true distribution $p$ and model
+$q$,
+
+$$
+H(p,q) = H(p) + D_{\mathrm{KL}}(p\,\|\,q),
+$$
+
+and the irreducible conditional entropy $H(p)$ motivates a loss floor. But the
+*fitted* $E$ is not the true entropy — it is whatever constant best straightens the
+curve over the measured regime, and it can extrapolate wrongly outside it.
+
+## How scaling-law experiments are actually run
+
+The equation is the easy part; the experimental controls are where the science
+lives. The workflow Chinchilla-style studies follow:
+
+1. **Fix a model family and recipe** — architecture, tokenizer, data pipeline,
+   evaluation objective — so runs are comparable. (e.g. dense decoder-only
+   Transformers varying width and depth.)
+2. **Choose a grid of budgets** — e.g. $N\in\{100\text{M},300\text{M},1\text{B},
+   3\text{B},10\text{B}\}$ crossed with several token budgets each, yielding
+   triples $(N_i, D_i, L_i)$.
+3. **Tune optimisation at every scale.** The goal is the best *achievable* loss per
+   scale, $L^\*(N,D)=\min_{h\in H} L(N,D,h)$ over learning rate, warmup, batch size,
+   and optimizer settings $h$ — otherwise you are fitting the loss of
+   poorly-tuned models, not of the scale.
+4. **Monitor training quality** — train/held-out curves, gradient norms
+   $\|\nabla_\theta L\|_2 = \big(\sum_j (\partial L/\partial\theta_j)^2\big)^{1/2}$,
+   update-to-weight ratios, NaNs/Infs, loss spikes, seed reproducibility. A large
+   or small gradient norm is not automatically failure — the *pattern* matters.
+5. **Fit the law** by least squares in log space,
+   $\min_{E,A,B,\alpha,\beta}\sum_i\big(\log\hat L_i - \log L_i\big)^2$.
+6. **Validate out-of-sample.** Hold out model sizes / budgets, predict their loss,
+   then actually train them and compare. A fit that only looks good on its own
+   training points proves nothing.
+
+How many runs? There are five free parameters, but five observations is nowhere
+near enough — a pilot might be $5\times5$ with tuning and replication, and
+Chinchilla used **more than 400 runs**. The count depends on noise, the
+extrapolation range wanted, and how stable the fitted exponents turn out to be.
+
+> A scaling law is only as trustworthy as the compute accounting, optimisation,
+> data quality, and out-of-sample tests behind it. The math optimises resources
+> *after* you have measured a reliable relationship; it cannot rescue a sloppy
+> experiment.
+
+## Deriving compute-optimal $N$ and $D$
+
+Now the payoff: given a fixed training budget $C=6ND$, how do you split it between
+model size and tokens? Minimise $L$ subject to the constraint. Solve the
+constraint, $D = C/(6N)$, and substitute:
+
+$$
+L(N) = E + A N^{-\alpha} + B\Big(\frac{6N}{C}\Big)^{\beta}.
+$$
+
+Set $dL/dN = 0$:
+
+$$
+-\alpha A N^{-\alpha-1} + \beta B\,(6/C)^{\beta} N^{\beta-1} = 0
+\;\Longrightarrow\;
+N^{\alpha+\beta} = \frac{\alpha A}{\beta B}\Big(\frac{C}{6}\Big)^{\beta}.
+$$
+
+Hence the two scaling exponents fall out directly, and $D=C/(6N)$ gives the other:
+
+$$
+\boxed{\;N_{\text{opt}} \propto C^{\,\beta/(\alpha+\beta)}\;},
+\qquad
+\boxed{\;D_{\text{opt}} \propto C^{\,\alpha/(\alpha+\beta)}\;}.
+$$
+
+The two exponents must sum to 1 because their product $N D$ has to scale like $C$.
+Plugging in Chinchilla's $\alpha=0.34,\ \beta=0.28$:
+
+$$
+N_{\text{opt}} \propto C^{0.452},
+\qquad
+D_{\text{opt}} \propto C^{0.548}.
+$$
+
+The paper's other estimation methods landed near the clean, memorable summary
+$N_{\text{opt}}\propto C^{0.5}$, $D_{\text{opt}}\propto C^{0.5}$ — i.e. **scale
+parameters and tokens roughly in lockstep.** Note that "scale together" is a
+statement about the *exponents on $C$*; it does **not** say $\alpha=\beta$.
+
+## The "20 tokens per parameter" rule
+
+The folklore ratio
+
+$$
+\boxed{\;\frac{D}{N}\approx 20\;}
+$$
+
+was *calibrated*, not assumed. The experiment: pick a budget $C$; train several
+configs all satisfying $6ND=C$; measure held-out loss; keep the lowest; repeat
+across budgets; see how the winning $N,D$ move. If the optimum at one budget is
+$(1\text{B},\,20\text{B})$ and at another is $(10\text{B},\,200\text{B})$, both give
+$D/N=20$, and the ratio holds across the sweep. Chinchilla's headline model made
+the point by example:
+
+$$
+N = 70\text{B},\quad D = 1.4\text{T}
+\;\Longrightarrow\;
+\frac{1.4\text{T}}{70\text{B}} = 20,
+$$
+
+and it beat the much larger, under-trained Gopher (280B) at comparable training
+compute. The exact ratio is not fixed by nature — change the architecture,
+dataset, or objective and it moves.
+
+## Kaplan (2020) vs Chinchilla (2022)
+
+Kaplan's earlier analysis had estimated
+
+$$
+N_{\text{opt}} \propto C^{0.73}, \qquad D_{\text{opt}} \propto C^{0.27},
+$$
+
+which says "spend new compute mostly on *bigger* models." Chinchilla's $\approx
+C^{0.5}/C^{0.5}$ says "split evenly." Over a $100\times$ compute increase the two
+recipes diverge sharply:
+
+$$
+\begin{array}{lcc}
+ & \textbf{Kaplan} & \textbf{Chinchilla}\\[3pt]
+\text{parameters} & 28.8\times & 10\times\\
+\text{training tokens} & 3.47\times & 10\times
+\end{array}
+$$
+
+Later work ("Reconciling…", "Resolving Discrepancies…", 2024) traced the gap to
+**methodology**, not nature: how embedding parameters were counted in small models,
+compute for the output-vocabulary projection, learning-rate warmup length, and
+scale-dependent optimizer tuning. The durable lesson survived both papers — loss
+follows power laws — while the contested part was the *optimal allocation*, and it
+turned on experimental bookkeeping. This is the cautionary tale behind the whole
+chapter: the exponents are artifacts of the controls as much as of the physics.
+
+## Fixed compute: what you lose by training longer
+
+This is the question the session kept returning to. *If I just keep training the
+same model on more tokens, the loss keeps dropping — so what exactly am I losing?*
+
+Start with what Chinchilla optimises. At a fixed budget, say $C=6\times10^{21}$
+FLOPs, these three configs all cost the same:
+
+$$
+\begin{array}{ccc}
+N & D & C\\[3pt]
+1\text{B} & 1\text{T} & 6\times10^{21}\\
+5\text{B} & 200\text{B} & 6\times10^{21}\\
+10\text{B} & 100\text{B} & 6\times10^{21}
+\end{array}
+$$
+
+and the law predicts which wins. Suppose the measured losses are $2.5$, $2.2$,
+$2.4$ — the $5\text{B}$ config is optimal *for this budget*. Now train that
+$5\text{B}$ model from $200\text{B}$ to $400\text{B}$ tokens:
+
+$$
+C = 6\,(5\times10^{9})(400\times10^{9}) = 1.2\times10^{22}\ \text{FLOPs},
+$$
+
+double the original. Its loss might improve $2.2 \to 2.1$. So yes — more training
+helped. The trap is the counterfactual: *with that doubled budget, could a
+different $N,D$ split have done even better?*
+
+$$
+\begin{array}{lcc}
+\textbf{config} & \textbf{compute} & \textbf{loss (illustrative)}\\[3pt]
+5\text{B},\,200\text{B} & 1\times & 2.20\\
+5\text{B},\,400\text{B} & 2\times & 2.10\\
+7\text{B},\,286\text{B} & 2\times & 2.05
+\end{array}
+$$
+
+The $7\text{B}$ config spends the *same* doubled compute and reaches a lower loss.
+That is the precise meaning of **training-compute suboptimal**: you did not lose
+the improvement you got, you lost the *larger improvement the same compute could
+have bought* had you also grown the model. Said the way the session finally put it:
+you could have had a **bigger model with lower loss** for that compute — but its
+**inference would then cost more too**. That trade is the whole next section.
+
+## Processed tokens vs unique tokens
+
+A second, independent subtlety hides in the symbol $D$. Training on $200\text{B}$
+unique tokens for one epoch and training on $200\text{B}$ unique tokens for *two*
+epochs both set $D_{\text{processed}} = 400\text{B}$ of compute — but they are not
+the same experiment:
+
+$$
+D_{\text{processed}} \neq D_{\text{unique}}.
+$$
+
+A second epoch can still lower loss (more optimiser steps over the data), but
+repeated data does **not** carry the same information as genuinely new data, and
+past a point repetition yields diminishing returns or outright overfitting. The
+Chinchilla law was calibrated in a largely single-pass, fresh-data regime, so it
+must **not** be blindly extrapolated to heavy repetition of a fixed corpus. Keep
+the two $D$'s mentally distinct whenever you reason about "training longer."
+
+## Inference-aware scaling — Beyond Chinchilla
+
+Chinchilla answers exactly one question:
+
+$$
+\textbf{Objective A:}\quad \min_{N,D} L(N,D)\quad\text{s.t.}\quad 6ND \le C
+$$
+
+*"Given this pretraining budget, what is the lowest validation loss?"* But a
+company that will serve the model cares about the **whole lifecycle**. For dense
+inference, parameter-associated compute is $\approx 2N$ FLOPs per output token, so
+over a lifetime output of $T_{\text{out}}$ tokens:
+
+$$
+\boxed{\;C_{\text{lifetime}} \approx \underbrace{6ND}_{\text{train}} +
+\underbrace{2N\,T_{\text{out}}}_{\text{serve}}\;}
+$$
+
+and the real objective becomes:
+
+$$
+\textbf{Objective B:}\quad \min_{N,D}\big(6ND + 2N\,T_{\text{out}}\big)
+\quad\text{s.t.}\quad L(N,D) \le L_{\text{target}}.
+$$
+
+Why does this favour a *smaller* model? Because inference cost scales with $N$
+alone, and a smaller model trained on far more tokens can reach a target quality
+while costing less on every one of the billions of tokens it will later generate.
+A hypothetical comparison at equal quality:
+
+$$
+\begin{array}{lcc}
+ & \textbf{large} & \textbf{smaller, longer-trained}\\[3pt]
+\text{parameters } N & 20\text{B} & 5\text{B}\\
+\text{training tokens } D & 400\text{B} & 4\text{T}\\
+\text{training FLOPs } 6ND & 4.8\times10^{22} & 1.2\times10^{23}\\
+\text{inference FLOPs/token } 2N & 40\text{B} & 10\text{B}
+\end{array}
+$$
+
+The smaller model costs $\sim2.5\times$ *more* to train but $\sim4\times$ *less*
+per generated token. Whether that is worth it is set entirely by $T_{\text{out}}$ —
+the more the model is used, the more the one-time training premium pays for itself.
+This is why production models are deliberately **overtrained relative to the
+Chinchilla optimum** (the same point Chapter 2 raised from the CWM side —
+[[code-world-models]]). Three clarifications that matter:
+
+- This is **overtraining, not overfitting** — it is a deliberate budget choice, not
+  a generalisation failure.
+- It is distinct from **inference-time** scaling (chain-of-thought, search,
+  looping — [[where-to-spend-computation]]): that spends *extra* compute per answer
+  at serve time; this makes the *base model* cheaper per token.
+- Extra training does **not** make an *unchanged* model cheaper to serve. It only
+  lets a *smaller* model become good enough to replace a larger one. And if you
+  already own a trained model, continuing it is often the pragmatic move —
+  Chinchilla compares configs when planning *from scratch*, not a reason to throw
+  away a paid-for model every time your budget grows.
+
+## The three questions you must not conflate
+
+The entire training-vs-inference discussion collapses into three separate
+questions with three separate answers:
+
+$$
+\begin{array}{ll}
+\textbf{question} & \textbf{answer}\\[4pt]
+\text{Will training the same model longer improve quality?} &
+  \text{Usually yes (if training stays healthy, data not over-repeated).}\\[3pt]
+\text{Is that the best use of the extra compute?} &
+  \text{Not necessarily — a bigger model may reach lower loss per FLOP.}\\[3pt]
+\text{Can longer training make deployment cheaper?} &
+  \text{Indirectly yes — a smaller model may reach target and replace a big one.}
+\end{array}
+$$
+
+The one line to carry out of the chapter:
+
+$$
+\boxed{\;\text{more training can improve quality} \;\neq\;
+\text{best possible quality per FLOP}\;}
+$$
+
+> Scaling laws are fitted power laws, not guarantees. $6ND$ accounts for training
+> FLOPs (2 forward + 4 backward per parameter per token) and undercounts attention
+> once context grows past $\sim 6d$. Chinchilla's $L=E+AN^{-\alpha}+BD^{-\beta}$,
+> fitted over 400+ runs, says scale $N$ and $D$ together ($\approx 20$ tokens per
+> parameter) to minimise loss at a **fixed training budget** — and the moment you
+> train that model longer you keep the quality gain but forfeit the larger gain a
+> *bigger* model would have bought for the same compute, buying a lower inference
+> cost instead. Which direction is "optimal" depends entirely on whether you are
+> minimising training FLOPs, lifetime serving cost ($+\,2N T_{\text{out}}$), or the
+> cost of improving a model you already own.

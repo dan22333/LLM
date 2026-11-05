@@ -132,6 +132,42 @@ an economic-link graph and trade the slow diffusion of shocks across it (the
   - Processed tokens vs unique tokens
   - Inference-aware scaling — Beyond Chinchilla
   - The three questions you must not conflate
+- **Active Reading — Paper Deep-Dives**
+  - How to read these three chapters
+- **Chapter 11: Why Pretraining Fails to Share Cross-Lingual Knowledge**
+  - Motivation: the cross-lingual knowledge gap
+  - Prerequisites
+  - The core obstacle to a clean experiment
+  - Method 1 — the Fictional Knowledge Dataset (FKD)
+  - Method 2 — the CLeq score
+  - Method 3 — the clone-language testbed
+  - Experiments and results
+  - Advantages of the approach
+  - Drawbacks and limitations
+  - Main contribution
+  - Anything else worth knowing
+- **Chapter 12: Matryoshka Language Model Suites**
+  - Motivation: a suite is wasteful to train
+  - Prerequisites
+  - Method — nesting, the junction, and integrated distillation
+  - Experiments
+  - Results
+  - Advantages
+  - Drawbacks and limitations
+  - Main contribution
+  - Anything else worth knowing
+- **Chapter 13: Multi-Stream Attention Residuals (MSAR)**
+  - Motivation: depth dilution and the residual stream
+  - Prerequisites
+  - The design challenge
+  - Method — contextual stream expansion, per-stream depth attention, fusion
+  - Block MSAR and the efficiency tricks
+  - Experiments
+  - Results
+  - Advantages
+  - Drawbacks and limitations
+  - Main contribution
+  - Anything else worth knowing
 
 ---
 
@@ -4768,3 +4804,677 @@ $$
 > cost instead. Which direction is "optimal" depends entirely on whether you are
 > minimising training FLOPs, lifetime serving cost ($+\,2N T_{\text{out}}$), or the
 > cost of improving a model you already own.
+
+---
+
+# Active Reading — Paper Deep-Dives
+
+The chapters above were written as the project's ideas were built. This part is
+different: it is a **reading log**. Each chapter here distils one paper from the
+*active-reading* stack — read closely, one per week — into a self-contained
+study note. These papers are not (yet) load-bearing for the RippleSignal
+strategy; they are kept here because each one teaches a transferable lesson about
+how modern language models are trained, shaped, and served.
+
+## How to read these three chapters
+
+Every chapter follows the **same nine-part template**, so you can compare papers
+on equal footing and find any part fast:
+
+1. **Motivation** — the problem the paper exists to solve.
+2. **Prerequisites** — what you must already understand to follow it.
+3. **Method** — the mechanism, with the equations typeset.
+4. **Experiments** — what was actually run (models, data, scales).
+5. **Results** — the numbers, honestly reported.
+6. **Advantages** — what the method buys you.
+7. **Drawbacks / limitations** — where it is weak or unproven.
+8. **Main contribution** — the one sentence the field will cite.
+9. **Anything else worth knowing** — the asides that do not fit above.
+
+The three papers, in reading order:
+
+| Ch. | Week | Paper | One-line thesis |
+|---|---|---|---|
+| 11 | 0 | Why Pretraining Fails to Share Cross-Lingual Knowledge | Disjoint *token spaces* — not grammar or script — are the root cause of a model learning the same fact separately in each language. |
+| 12 | 1 | Matryoshka Language Model Suites | Nest a family of models inside one network so a whole suite trains in one run and serves speculative decoding almost for free. |
+| 13 | 2 | Multi-Stream Attention Residuals (MSAR) | Replace the additive residual stream with *multi-head attention along the depth axis* to use deep stacks more efficiently. |
+
+---
+
+# Chapter 11: Why Pretraining Fails to Share Cross-Lingual Knowledge
+
+*Gaber, Dolev, Fittschen, Cheng, Marton & Choshen (Weizmann, Bar-Ilan, Johns
+Hopkins, A\*STAR, U. Washington, MIT, MIT-IBM), arXiv 2609.19291, Sept 2026.*
+
+A large multilingual model can read a fact in English and, astonishingly, not
+"know" it when asked in Arabic. Humans who speak two languages do not work this
+way — learn that Paris is the capital of France in one language and you know it in
+both. LLMs instead **compartmentalise**: they store the same fact separately in
+each language, wasting capacity and producing cross-lingual inconsistencies. The
+limitation is well documented, but prior work only ever measured it *post-hoc* on
+fully-trained, instruction-tuned, preference-optimised models — so nobody knew
+*where in the training pipeline* the failure is born. This paper's whole
+contribution is to pin the failure to the **pretraining** stage and then to
+isolate its **cause** with a surgically controlled experiment, rather than
+patching symptoms after the fact.
+
+## Motivation: the cross-lingual knowledge gap
+
+Models pick up *linguistic competence* (grammar, fluency) in a new language from
+a modest data budget, but they fail to transfer *knowledge and skills* — maths,
+code, reading comprehension, facts — out of their dominant training language.
+Everyone "fixes" this after pretraining: prompting tricks, pre-translation,
+knowledge editing, activation steering, fine-tuning, RL. The authors argue those
+are the wrong altitude. A model that has already learned a fact twice (once per
+language) has **already paid** the capacity and compute cost of duplication;
+making its two answers agree at inference does not refund that cost. If the
+damage happens in pretraining, the fix must happen in pretraining. So the first
+job is simply to *prove* that compartmentalisation originates there — and the
+second is to find what, mechanistically, causes it.
+
+## Prerequisites
+
+- **Tokenization / BPE and the embedding table.** A tokenizer maps text to
+  integer IDs in a vocabulary of size $V$; each ID indexes a row of the embedding
+  matrix $E \in \mathbb{R}^{V \times d}$. Two languages have a **disjoint token
+  space** when no vocabulary index is shared — the Arabic word and its English
+  translation live in different rows that the model must independently learn to
+  relate. (See [[engineering-long-contexts]] for how tokens enter a Transformer.)
+- **Perplexity** as a language-modelling quality measure (lower = better),
+  covered in [[scaling-laws]].
+- **Ordinary least squares (OLS) regression** — fitting $y = \alpha + \beta x$ by
+  minimising squared error; the slope $\beta$ is "output gained per unit input."
+- **Transfer vs. absolute ability.** A model can get *better at Arabic* (higher
+  raw accuracy) without getting *better at moving knowledge between* languages.
+  The paper's metric is built precisely to separate these.
+
+## The core obstacle to a clean experiment
+
+Causal analysis here is blocked by two problems. **(1) Exposure is
+untraceable:** real pretraining corpora are enormous, so you cannot know how many
+times the model saw a given fact in each language — and without exposure counts
+you cannot measure transfer. **(2) Languages differ in everything at once:**
+vocabulary, script, syntax, frequency, semantics. If English–Arabic
+compartmentalises, you cannot say *which* difference is to blame. The method is
+two inventions that kill these two problems respectively.
+
+## Method 1 — the Fictional Knowledge Dataset (FKD)
+
+To control exposure, the authors **inject invented facts** absent from any real
+corpus: 2,048 facts about synthetic entities (e.g. *"Cultramive is a company
+that sells silver-plated bicycles"*). Each fact is expanded into many paraphrased
+natural documents (for training) plus held-out multiple-choice questions (for
+evaluation, never seen in training). Because the facts are fictive, the *only*
+exposure the model ever gets is the one the experimenter injects — so the number
+and language of exposures, $N_A(f)$ and $N_B(f)$, are known exactly. A validation
+sweep confirms FKD is learnable: at zero injection, MCQ accuracy is at chance;
+injecting paraphrases raises accuracy in a **log-like** curve across all tested
+languages.
+
+## Method 2 — the CLeq score
+
+Given a bilingual model, how valuable is seeing a fact in language $B$ for
+answering it in language $A$, *relative to* seeing it natively in $A$? Fit one OLS
+regression across all facts:
+
+$$\mathrm{acc}_A(f) = \alpha + \beta_A\,N_A(f) + \beta_B\,N_B(f) + \varepsilon.$$
+
+$\beta_A$ is accuracy gained per **native** exposure; $\beta_B$ per
+**cross-lingual** exposure. The Cross-Lingual equivalence score is their ratio:
+
+$$\mathrm{CLeq}_{B\to A} = 100 \times \frac{\beta_B}{\beta_A}, \qquad
+\mathrm{CLeq} = \tfrac12\!\left(\mathrm{CLeq}_{A\to B} + \mathrm{CLeq}_{B\to A}\right).$$
+
+**100%** means a foreign exposure is as good as a native one (perfect transfer);
+**0%** means a foreign exposure is worthless (total compartmentalisation). The
+genius of the *ratio* is that it is **invariant to raw competence**: a model that
+simply learns everything better raises $\beta_A$ and $\beta_B$ together, leaving
+the ratio fixed. This is what lets them compare across scales and recipes without
+confounding "better at the language" with "better at transferring." (Noise can
+push estimates slightly negative; read negatives as "absolute
+compartmentalisation," not negative transfer.)
+
+## Method 3 — the clone-language testbed
+
+To strip away *all* linguistic confounds, they do not use two different
+languages. They take **one** resource-rich language (English) and make two copies
+whose only difference is their token IDs. Formally, tokenize text to
+$T = [t_1,\dots,t_n]$ with $t_i \in [0, V-1]$, then define
+
+$$\text{English}_1(T) = [t_1,\dots,t_n], \qquad
+\text{English}_2(T) = [t_1{+}V,\ \dots,\ t_n{+}V] \in [V, 2V-1].$$
+
+The vocabulary is doubled; the two "languages" are byte-for-byte identical in
+structure, grammar, and statistics, and differ in **nothing but their token
+space**. If knowledge still fails to cross between $\text{English}_1$ and
+$\text{English}_2$, the cause *must* be the disjoint tokens — there is nothing
+else left to blame. To quantify partial sharing they add **soft-mapping**: for
+each matched token pair, a fraction $p$ of the embedding vector is tied (shared
+and learned jointly), the rest kept language-specific.
+
+## Experiments and results
+
+**Models/data.** Two scales — 360M (SmolLM2 architecture) and 7B (Llama-3
+adaptation), both BPE vocab 65,536, trained from scratch to Chinchilla-optimal
+budgets with TorchTitan. English = FineWeb-edu; Arabic = FineWeb-edu-ar (machine
+translation); Russian = FineWeb2-HQ (native web text). A 50/50 token budget per
+language, with a strict document-disjoint split so no parallel pair is ever seen
+together. FKD is split into 16 groups of 128 facts, each group injected at a
+uniform $(N_A, N_B)$ drawn from the cross-product of $\{0, 20, 100, 1000\}$.
+
+**1. Compartmentalisation is born in pretraining — and scale barely helps.**
+
+| Setting | Scale | CLeq |
+|---|---|---|
+| English–Arabic | 360M | **0.9%** |
+| English–Russian | 360M | 1.9% |
+| English–Arabic | 7B | 5.9% |
+
+A bilingual model modestly *improves* per-language perplexity over a monolingual
+half (positive transfer exists) — but that gain is **not** knowledge transfer.
+
+**2. Standard interventions fail.** In English–Arabic at 360M:
+
+| Intervention | CLeq |
+|---|---|
+| Baseline | 0.9% |
+| Language mixing (code-switching) | 2.2% |
+| Activation alignment (InfoNCE / L2) | 2.5% |
+
+**3. Disjoint tokens alone are sufficient to compartmentalise.** In the
+confound-free clone setup:
+
+| Clone-language variant | CLeq |
+|---|---|
+| Baseline (fully disjoint) | **−2.6%** |
+| Same data, disjoint tokens | −0.1% |
+| Soft-map 20% tied | 8.6% |
+| Soft-map 50% tied | 82.7% |
+| Shared init (parallel embeddings started identical) | 78.6% |
+| Soft-map ≈100% | 99.0% |
+
+Two sharp findings here. There is a **threshold**: sharing jumps from the weak
+region (8.6% at 20% tying) to near-complete (82.7% at 50%). And pretraining
+**actively drives aligned tokens apart** — even when matched embeddings are
+*initialised identical* (the alignment that full tying would enforce), training
+decays it to 78.6%, well short of the reachable ceiling. Alignment is not a
+stable fixed point of pretraining; it is something the process fights.
+
+**4. The fix — Word-Wise Translation (WWT).** Map every word of language $A$ into
+language $B$'s token space using a large invertible dictionary (out-of-dictionary
+words fall back to an invertible character transliteration — Buckwalter for
+Arabic). This is *not* full translation: it is context-free, word-wise, preserves
+the source's word order and grammar, and is cheap enough to apply and invert on
+the fly during both training and inference. The result ("WWT-Ar") is Arabic in a
+different writing system, sharing English's token space.
+
+| Pair | Scale | CLeq (native) | CLeq (WWT) | English PPL native → WWT |
+|---|---|---|---|---|
+| En–Ar | 360M | 0.9% | **12.6%** (14×) | 19.53 → 18.74 |
+| En–Ar | 7B | 5.9% | 12.5% | 8.45 → 8.39 |
+| En–Ru | 360M | 1.9% | 23.3% | 18.99 → 18.36 |
+
+Strikingly, WWT *also improves English perplexity* despite the model now seeing
+~23% fewer Arabic documents (WWT-Ar needs ~30% more tokens per sentence) — the
+unified token space lets the model extract more value from the cross-lingual data
+it does process.
+
+**5. It is semantics, not inventory, that matters.** Controls that share tokens
+but not meaning collapse: shuffling the dictionary → 3.0%; transliteration-only
+(share script, not meaning) → −0.3%; permuting token identities in the clone
+setup → −2.6% (same as fully disjoint). What transfer needs is **shared meanings
+of tokens**, not merely a shared token inventory.
+
+## Advantages of the approach
+
+- **Causal, not correlational.** The clone-language + fictive-fact design lets
+  them *isolate one variable* (token space) and prove sufficiency — a level of
+  control impossible on natural corpora.
+- **A metric that generalises.** CLeq's normalisation makes it comparable across
+  scales, recipes, and language pairs, and its ceiling is empirically reachable.
+- **WWT is a data-level fix:** no parallel corpora, no auxiliary loss, no
+  architecture change, and it is transparent at the interface (users still read
+  and write native script).
+
+## Drawbacks and limitations
+
+- **Translationese.** The Arabic corpus is machine-translated from English, which
+  can inflate baseline structural alignment; mitigated (not eliminated) by
+  replicating the core findings on *native* Russian.
+- **Linear metric on a log-shaped curve.** CLeq is an OLS linear approximation to
+  a log-like acquisition curve, so it oversimplifies the true dynamics.
+- **Small, simple knowledge.** 2,048 entity–attribute facts → measurement noise
+  (the paper reports significance tests to defend the headline comparisons).
+- **Token fertility.** WWT inflates sequence length ~30%, raising inference cost;
+  the authors leave the engineering of an optimal dictionary to future work.
+- **Bilingual only.** Whether many languages can share one token space without
+  interfering is untested, as is whether tokenizer-free (byte-level) models
+  dissolve the barrier by construction.
+
+## Main contribution
+
+> Cross-lingual knowledge compartmentalisation **originates in pretraining and is
+> in substantial part a tokenization phenomenon**: it appears even between two
+> identical copies of one language that differ only in token IDs, and it is
+> substantially reduced by an intervention (word-wise translation into a shared
+> token space) that changes nothing but the tokens — recovering up to 12.6% of
+> native learning efficiency, ~14× the baseline.
+
+## Anything else worth knowing
+
+- **Soft mapping restores language identity.** Full WWT merges tokens so
+  completely the model cannot tell which language it is emitting (so it cannot
+  code-switch). Keeping a few embedding dimensions language-specific (high $p$)
+  recovers most transfer — $p=90\%\!\to\!9.60\%$, $p=99\%\!\to\!10.47\%$ (76–83% of
+  full WWT) — while restoring a language-identity mechanism.
+- **The transfer is asymmetric** (WWT-Ar→English 17.9% vs English→WWT-Ar 7.3%),
+  because WWT-Ar's vocabulary is a subset of English's — many English words never
+  arise as a translation target.
+- **Embedding analysis** shows the two token spaces end up structurally similar
+  and linearly alignable, yet with *no* correspondence between matching tokens:
+  the model learns the same distribution twice but never bridges them. Structural
+  similarity is not sufficient for knowledge transfer — a direct challenge to the
+  assumption that multimodal systems will "naturally" generalise across parallel
+  representations.
+- **Connection to this project.** The lesson generalises past language: any time
+  you ask a model to unify knowledge across two *disjoint symbol interfaces*
+  (languages, modalities — or, for RippleSignal, different tickers / entity
+  encodings of the "same" economic event), shared surface form is not enough;
+  the representations must be made to share *meaning*. See [[code-world-models]]
+  on world models learning transferable dynamics.
+
+---
+
+# Chapter 12: Matryoshka Language Model Suites
+
+*Nathan Godey & Yoav Artzi (Cornell), arXiv 2608.09703, Aug 2026.*
+
+Model providers rarely ship a single model — they ship a **suite**: a family of
+sizes (say 1B / 8B / 30B / 70B) so each deployment can pick its own cost/quality
+point. The conventional way to build a suite is to train every size from scratch
+as a separate run, then maybe distil the big one into the small ones afterwards.
+Matryoshka asks a sharper question: can we **jointly train the whole family as
+one nested network** — so the small models are literally the first layers of the
+big one — keep each size's quality, and cut *both* training and inference cost?
+The name is the Russian nesting doll: $\theta_1 \subset \theta_2 \subset \theta_3$.
+
+## Motivation: a suite is wasteful to train
+
+Training three models independently means three Transformers repeatedly
+re-learning the same basic linguistic representations while keeping entirely
+separate weights and doing entirely separate computation. The paper's baseline is
+three independent models — 500M, 1.5B, 3B — each pretrained on the same 35B-token
+budget, totalling ~5.2B parameters across the suite. The redundancy is
+structural, and it is paid twice: once at training (three full runs) and again at
+serving (no sharing between the deployed checkpoints). Matryoshka's thesis is
+that a model suite is an **optimisation problem**, not three separate problems.
+
+## Prerequisites
+
+- **Transformer width $D$, depth $L$, and the LM head.** Parameters scale as
+  $\approx 2VD + 16LD^2$; forward FLOPs/token $\approx 32LD^2 + 2VD$ (dominant
+  projections). Doubling width roughly *quadruples* per-layer projection params.
+  See [[scaling-laws]] for the $6ND$ training-FLOP identity used below.
+- **Knowledge distillation** — training a student to match a teacher's full
+  soft output distribution, not just the hard label (covered in
+  [[not-forgetting]] and [[manufacturing-the-right-signal]]).
+- **Speculative decoding** — a cheap *draft* model proposes several tokens; a
+  large *verifier* checks the whole block in one parallel forward pass. Covered
+  in depth in the "Anything else" section below.
+- **The KV cache** and why its size bounds serving batch size
+  ([[engineering-long-contexts]]).
+
+## Method — nesting, the junction, and integrated distillation
+
+**Nesting.** Instead of $M$ independent parameter sets, enforce strict
+containment $\theta_1 \subset \theta_2 \subset \cdots \subset \theta_M = \theta$,
+with strictly increasing hidden widths $D_1 \le D_2 \le \cdots \le D_M$. The
+early blocks are shared by all larger models; each sub-model terminates at its
+own **exit** — a dedicated LM head $W_m$ it can be detached and served with. The
+paper's 3B suite allocates depths $(24, 10, 5)$ and increasing widths, so the
+500M model runs 24 layers, the 1.5B runs 34, and the 3B runs all 39. Running the
+full stack once produces **all three sub-models' logits in a single forward
+pass**.
+
+**The junction (the key trick).** A sub-model of width $D_m$ cannot feed directly
+into one expecting $D_{m+1} > D_m$. Matryoshka concatenates the smaller model's
+output $o^m$ with a *fresh* embedding $e^{m+1}$ covering the new $D_{m+1}-D_m$
+channels — but a raw concatenation has a magnitude mismatch (Transformer outputs
+have much larger norm than fresh embeddings, which destabilises the low-index
+channels). The fix is to **rescale the old output to match the fresh embedding's
+norm** before concatenating:
+
+$$\tilde o^m = o^m \cdot \frac{\lVert e^{m+1} \rVert_2}{\lVert o^m \rVert_2},
+\qquad
+o^{m+1} = T^{m+1}_\theta\big(\mathrm{concat}(e^{m+1},\ \tilde o^m)\big).$$
+
+This preserves the old vector's *direction* but equalises the *norms* of the old
+and fresh groups — note it is **not** per-vector unit normalisation and **not**
+LayerNorm. The junction adds **no new parameters**.
+
+**Integrated distillation (free teacher).** Because every forward pass already
+produces all sub-models' logits, the largest model $M$ can teach the smaller ones
+*online, for free* — no separate teacher Transformer to run, no stored logits.
+Each student $m < M$ gets a distillation term
+
+$$\mathcal{L}^{M\to m}_{d} = -\sum_v \mathrm{stop\_grad}\big(\sigma(l^M)_v\big)\,\log\sigma(l^m)_v,$$
+
+and its total loss is a convex mix with the ground-truth cross-entropy,
+
+$$\mathcal{L}_m = (1-\alpha_d)\,\mathcal{L}^m_{\mathrm{ce}} + \alpha_d\,\mathcal{L}^{M\to m}_d,
+\qquad \alpha_d = 0.3,$$
+
+summed over exits. The `stop_grad` keeps gradients from flowing through the
+teacher's *targets* (it does not freeze the shared trunk). The paper notes
+$\alpha_d$ should be *lower* than in offline distillation setups.
+
+## Experiments
+
+- **Main suite:** 500M / 1.5B / 3B nested model, 35B tokens of FineWeb-Edu,
+  compared against three independently-trained models of matching sizes.
+- **Two comparison regimes.** *Token-matched*: every model sees 35B tokens — does
+  Matryoshka reach similar quality for less total compute? *Compute-matched*: the
+  conventional checkpoints are taken earlier (with LR cooldown, ~23B tokens) to
+  equalise the GPU budget — can Matryoshka reach *higher* quality at the same
+  spend? Both claims hold at this scale.
+- **Benchmarks:** seven zero-shot tasks (ARC-Easy/Challenge, HellaSwag, LAMBADA,
+  OpenBookQA, PIQA, Winogrande) on *base* (non-instruction-tuned) models, plus
+  **byte-normalised** perplexity on WikiText-103, C4, PG-19, arXiv, PubMed.
+- **Inference:** greedy and nucleus ($p=0.9$, $T=0.4$) speculative decoding on a
+  500M-draft / 3B-verifier pair, measuring throughput and max batch size.
+- **Ablations:** a small 50M/100M/200M suite isolating the junction components
+  and distillation, plus an $\alpha_d$ sweep.
+
+## Results
+
+| Metric | Conventional | Matryoshka | Outcome |
+|---|---|---|---|
+| Suite size (reported) | ~5.2B | ~3.2B | smaller |
+| Training compute (reported) | ~$1.10\times10^{22}$ | $7.0\times10^{21}$ | **36% less** |
+| 500M / 1.5B / 3B accuracy | 47.0 / 52.4 / 53.5% | 46.5 / 52.2 / 53.3% | within 0.5 pt |
+| 3B out-of-domain byte PPL | 2.097 | 2.067 | slight improvement |
+| Max batch (spec. pair, A100 80GB) | 64 | 102 | **+59%** |
+| Greedy spec. throughput | 2,100 tok/s | 2,650 tok/s | **+26%** |
+| Nucleus spec. throughput | — | — | **+14%** (headline) |
+
+The ablation (50M/100M/200M, avg validation PPL, lower better): independent 20.05;
+zero-padding junction 20.61 (worst); fresh embeddings + distillation, no
+norm-matching 20.27; norm-matching, no distillation 20.22; **full Matryoshka
+20.07** — nearly matching the independent baseline. Both the junction's
+norm-matching *and* the distillation term carry weight.
+
+## Advantages
+
+- **One run, N models, free distillation.** Training the whole suite costs on the
+  order of training the largest model alone; distillation is a by-product of the
+  forward pass rather than an extra teacher run.
+- **Each exit is a real, standalone checkpoint** — its own width, depth, and KV
+  footprint — unlike early-exit methods that share one hidden width.
+- **Speculative decoding wins twice.** Lower *system* cost (the draft *is* the
+  verifier's first layers, so early-layer compute and KV cache are shared —
+  ~271 KiB/token vs ~376 for an independent pair) *and* higher *acceptance*
+  (joint training + distillation make draft and verifier distributions more
+  similar, and expected acceptance is $1-\mathrm{TV}(p,q)$).
+
+## Drawbacks and limitations
+
+- **Efficiency, not a smarter model.** Matryoshka reaches *near-parity*, not
+  higher quality — it is a cheaper way to train/serve a useful family, not a
+  better 3B model.
+- **Accounting not fully reconciled.** The "36%" is GPU-time × peak-FLOPs, not an
+  exact op count; the idealised $6NT$ ratio gives ~38.5%, and the paper's own
+  Figure 2 and Appendix B disagree slightly on baseline GFLOPs/token (5.54 vs
+  ~6.12) and KV bytes/token.
+- **Scope.** Studies *pretraining* only — open whether benefits survive at much
+  larger scale, after SFT + RL, with more exits, or across context lengths.
+- **Distillation is not free quality:** too-high $\alpha_d$ (0.5–0.7) *hurts* the
+  larger models even as it raises teacher–student agreement.
+
+## Main contribution
+
+> A pretraining framework that **nests a family of increasing-width sub-models
+> into one jointly-trained network**, delivering an entire model suite in a single
+> run at ~36% less reported training compute and near-parity quality, with a
+> parameter-free norm-matching junction and free online distillation — and whose
+> nested structure makes speculative decoding substantially faster by sharing
+> weights/KV-cache and raising draft–verifier agreement.
+
+## Anything else worth knowing
+
+- **Why speculative decoding loves nesting.** Expected single-token acceptance is
+  $\mathbb{E}[a(X)] = \sum_x \min(p(x), q(x)) = 1 - \mathrm{TV}(p,q)$, so the
+  closer the draft $q$ is to the verifier $p$, the more proposals survive.
+  Independently-trained draft/verifier pairs barely beat plain autoregressive
+  decoding; nesting + distillation is what makes a *larger, stronger* draft
+  practical.
+- **Depth vs width and the KV trade-off.** At fixed per-block params $LD^2 = C$,
+  width $D \propto 1/\sqrt{L}$, so KV memory $\propto LD = \sqrt{CL} \propto
+  \sqrt{L}$ — a deeper, narrower model can cost *more* KV than a shallower, wider
+  one of equal size. The authors swept total-layer budgets of 28/39/50 and picked
+  39 as the balance.
+- **Connection to this project.** The suite-as-optimisation framing and the
+  training/inference cost split connect directly to [[scaling-laws]]
+  (inference-aware scaling) and the harness economics in [[the-hedge-fund-harness]]:
+  if RippleSignal ever serves many model sizes, nesting is how you avoid paying
+  for each one separately.
+
+---
+
+# Chapter 13: Multi-Stream Attention Residuals (MSAR)
+
+*Qin, Zhang, Dai, Zou, Wu, Yang, Xia, Yao, Liu & Yan (Shanghai Jiao Tong Univ. /
+Xiaohongshu "Dots Studio"), arXiv 2610.13630, Oct 2026.*
+
+Scaling **depth** — stacking more layers — has been a primary lever for better
+LLMs, but in modern PreNorm Transformers adding layers yields diminishing
+returns. The reason is the **residual stream**. This chapter is about a line of
+work that reinterprets the residual connection as a kind of *attention along the
+depth axis*, and MSAR's specific contribution: generalising it from single-head
+to **multi-head depth attention**, cheaply.
+
+## Motivation: depth dilution and the residual stream
+
+A standard residual stack propagates information by *adding* each block's output
+to a single running hidden state:
+
+$$\boldsymbol h_{l+1} = \boldsymbol h_l + f_l(\boldsymbol h_l)
+\quad\Longrightarrow\quad
+\boldsymbol h_l = \sum_{i=0}^{l-1} \boldsymbol v_i,\quad \boldsymbol v_i = f_i(\boldsymbol h_i).$$
+
+So the residual stream performs **depth mixing with fixed unit coefficients**:
+every past layer's output is dumped into one accumulating vector. Two
+consequences hurt deep stacks. (1) Later layers read the *accumulated* state, not
+individual earlier features — a feature formed in layer 3 is hard to retrieve at
+layer 40. (2) As depth grows the running state grows, so each new update is
+progressively *smaller relative to the stream* — **depth-wise information
+dilution**. This is why very deep models often use their depth inefficiently.
+
+Recent work attacks the residual design itself. **Hyper-Connections (HC)** and
+its manifold-constrained variant **mHC** widen the single stream into $m$
+persistent parallel streams with learned mixing (a recurrent, linear-attention-
+style depth memory). **Attention Residuals (AttnRes)** instead replaces the fixed
+additive sum with a *content-dependent softmax retrieval* over earlier outputs —
+i.e. single-head attention along depth. The natural question: multi-head
+attention revolutionised the *sequence* axis — can we have **multi-head attention
+on the depth axis**?
+
+## Prerequisites
+
+- **Residual connections and PreNorm Transformers** — the $\boldsymbol h_{l+1} =
+  \boldsymbol h_l + f_l(\boldsymbol h_l)$ identity path.
+- **Softmax attention** (query–key scoring, normalised weights) — here applied
+  *across layers* rather than across tokens ([[engineering-long-contexts]]).
+- **RMSNorm**, **causal masking**, and **depthwise 1-D convolution** (a per-channel
+  convolution over the token axis — cheap, mixes a local window).
+- **Mixture-of-Experts (MoE)** backbones and **GQA** ([[manufacturing-the-right-signal]],
+  [[engineering-long-contexts]]), since all experiments are on MoE models.
+- **Scaling laws / iso-loss compute speedup** ([[scaling-laws]]) — the main
+  headline metric.
+
+## The design challenge
+
+Making depth attention *multi-head* is non-trivial, and the paper is explicit
+about two failed routes. **(a) Channel-splitting** the hidden state into head
+fragments (as sequence-axis MHA does) *degraded* performance: in depth attention
+the retrieved "value" *is the hidden state itself* and must stay a coherent
+whole; slicing it breaks that integrity. **(b) Deriving candidate streams via the
+HC-style write-back** keeps each candidate full-dimensional, but the candidates
+are just scalar reweightings of the same vector — after normalisation their keys
+are nearly identical, so the heads have no diversity. The central problem:
+**construct diverse depth-attention heads from a single layer output without
+compromising its full-dimensional integrity.**
+
+## Method — contextual stream expansion, per-stream depth attention, fusion
+
+MSAR's insight is to draw head diversity from the **sequence axis** instead of
+splitting the channel axis. Three steps:
+
+**1. Multi-stream source expansion (cheap, via convolution).** Expand each source
+$\boldsymbol v_i$ into $m$ full-dimensional streams using lightweight *causal
+depthwise 1-D convolutions* of different kernel sizes — stream 0 is the identity,
+the others aggregate different-sized local windows of preceding tokens:
+
+$$\boldsymbol v^{(0)}_{i,t} = \boldsymbol v_{i,t}, \qquad
+\boldsymbol v^{(r)}_{i,t} = \sum_{\delta=0}^{\kappa_r - 1} \boldsymbol c_{i,r,\delta}\odot \boldsymbol v_{i,t-\delta},\quad r=1,\dots,m{-}1.$$
+
+Because the conv is causal it never leaks future tokens; each stream is a
+full-dimensional *view* of the same source at a different contextual scale.
+Default: keep the original + three convs with kernels $\{4, 8, 12\}$, so $m=4$.
+
+**2. Per-stream depth attention.** Each stream gets its *own* learned pseudo-query
+$\boldsymbol w^{(r)}_l$ and does its own softmax retrieval over the depth history,
+using each stream's source as its key (with the RMSNorm'd exponential kernel
+$\phi(\boldsymbol q,\boldsymbol k)=\exp(\boldsymbol q^\top\mathrm{RMSNorm}(\boldsymbol k))$):
+
+$$\boldsymbol z^{(r)}_l = \sum_{i=0}^{l-1} \alpha^{(r)}_{i\to l}\,\boldsymbol v^{(r)}_i,
+\qquad
+\alpha^{(r)}_{i\to l} = \frac{\phi(\boldsymbol q^{(r)}_l,\boldsymbol k^{(r)}_i)}{\sum_{j=0}^{l-1}\phi(\boldsymbol q^{(r)}_l,\boldsymbol k^{(r)}_j)}.$$
+
+So different heads can select different depth histories through different
+sequence-context views — genuine multi-head depth attention, with every head
+full-dimensional.
+
+**3. Lightweight stream fusion.** The $m$ retrieved streams $Z_l$ are fused into
+one layer input by an mHC-style **Hpre** scalar mixer (a small projection +
+sigmoid producing $m$ input-dependent weights), rather than a costly $md\times d$
+output projection:
+
+$$\boldsymbol h_l = \big(H^{\mathrm{pre}}_l Z_l\big)^\top = \sum_{r=0}^{m-1}\big(H^{\mathrm{pre}}_l\big)_r\,\boldsymbol z^{(r)}_l.$$
+
+## Block MSAR and the efficiency tricks
+
+Naively, depth attention must retain *every* layer's output as a source —
+prohibitive memory and pipeline traffic. **Block MSAR** (following AttnRes)
+partitions the $L$ residual sub-layers into $N\!\approx\!8$ contiguous blocks;
+within a block, outputs accumulate into a single-stream summary $\boldsymbol b_n
+= \sum_{j\in\mathcal B_n} f_j(\boldsymbol h_j)$, and depth attention retrieves over
+*block summaries* plus the current partial sum. Three systems tricks make it
+nearly free:
+
+- **Single-stream storage.** The $m$ streams are *deterministic conv functions*
+  of the single-stream summaries, so MSAR stores and communicates only
+  single-stream sources and expands on demand — cutting persistent storage and
+  pipeline payload from $O(mNd)$ down to $O(Nd)$, **matching AttnRes**.
+- **Fused expansion kernel.** Expanded streams are consumed immediately by the
+  following depth attention and have no other consumer, so conv-expansion and
+  attention fuse into one kernel — no intermediate writes.
+- **Two-phase computation + cross-stage caching**, inherited from AttnRes: batch
+  all targets' queries against completed sources first, then merge each layer's
+  current partial via online softmax.
+
+Net overhead at 28B MoE: **+0.5% training FLOPs, +0.3% activated params**.
+
+## Experiments
+
+- **Backbones:** DeepSeekMoE-style Transformers, SwiGLU FFN, GQA, RMSNorm, RoPE,
+  Qwen2 tokenizer, seq-len 8192. Three sizes: **10B** MoE (ablations), **18B** and
+  **28B** MoE (main). Default MSAR: $m=4$ streams, $N\!\approx\!8$ blocks.
+- **Baselines:** Vanilla residual, mHC ($m=4$, 20 Sinkhorn iterations), AttnRes
+  ($N\!\approx\!8$).
+- **Downstream:** 12 benchmarks in three groups — general (MMLU, MMLU-Pro,
+  MMLU-Redux, ARC-C, BBH), code & maths (HumanEval, LCBench, GSM8K, MATH), and
+  Chinese (CMMLU, C-Eval, C3).
+- **Scaling laws:** four model scales, token-budget-matched per scale, fitting a
+  shifted power law $\mathcal L(C) = A\,C^{-\beta} + E$ with irreducible loss
+  $E = 0.72$; report the iso-loss compute speedup vs Vanilla.
+- **Ablations** on 10B MoE (Pile loss): remove conv, remove Hpre, vary $m$ and
+  block granularity $S$.
+
+## Results
+
+**Downstream (average over 12 benchmarks):**
+
+| Scale | Vanilla | mHC | AttnRes | **MSAR** |
+|---|---|---|---|---|
+| 18B | 37.5 | 41.7 | 41.8 | **45.7** |
+| 28B | 44.6 | 47.4 | 49.4 | **52.4** |
+
+MSAR wins **all 12 benchmarks at both scales** (e.g. at 18B vs AttnRes: ARC-C
++6.2, BBH +5.9, MMLU +3.5; final training loss 1.750 vs Vanilla 1.799 / mHC 1.776
+/ AttnRes 1.769).
+
+**Scaling law — iso-loss compute speedup vs Vanilla:**
+
+| Method | Speedup |
+|---|---|
+| mHC | 1.30× |
+| AttnRes | 1.35× |
+| **MSAR** | **1.58×** |
+
+**Ablations (10B, Pile loss, lower better):** Vanilla 1.898 → mHC 1.871 → AttnRes
+1.867 → **MSAR 1.847**. Removing the convolutions (identical streams, distinct
+queries only) rises to 1.862 — proving the gain comes from *source diversity*,
+not merely multiple query heads. A hand-built AttnRes+mHC hybrid reaches only
+1.861, showing MSAR's advantage is its *specific design*, not just "cross-layer
+access plus multi-stream state." $m=2$ already captures most of the gain (1.850);
+$m=8$ barely improves on $m=4$ (1.846 vs 1.847) → $m=4$ default.
+
+## Advantages
+
+- **Large quality / compute gains for almost no overhead** (+0.5% FLOPs), and it
+  **matches AttnRes's storage and communication** cost despite being multi-stream.
+- **Diversity without breaking integrity** — the convolution views keep every
+  head full-dimensional, solving the channel-split problem that sank earlier
+  attempts.
+- **Drop-in compatible** with AttnRes's block mode, cross-stage caching, and
+  two-phase inference, and validated at genuinely large (18B/28B MoE) scale.
+
+## Drawbacks and limitations
+
+- **Extra memory traffic** vs AttnRes: the retrieved multi-stream outputs must be
+  written and re-read for Hpre aggregation — the one place MSAR is not free.
+- **Diminishing returns** past $m=4$ streams and finer-than-$N\!\approx\!8$ block
+  granularity; the knobs saturate quickly.
+- **Scope.** Evaluated only on DeepSeekMoE-style **MoE** pretraining with
+  likelihood/generation benchmarks — no dense-model, instruction-tuned, or RL
+  results, and gains are reported as loss/benchmark, not downstream agentic use.
+- **Added architectural complexity** (per-stream queries, multi-scale convs,
+  fused kernels, two-phase scheduling) relative to a plain residual.
+
+## Main contribution
+
+> MSAR generalises single-stream depth retrieval (AttnRes) into **multi-head
+> attention along the depth axis**, drawing head diversity from multi-scale causal
+> convolutions over the sequence rather than from channel-splitting — so streams
+> stay full-dimensional — and it does so while storing only single-stream
+> summaries (expanded on demand), matching AttnRes's cost and delivering a 1.58×
+> iso-loss compute speedup over a standard residual baseline.
+
+## Anything else worth knowing
+
+- **The time–depth duality.** The paper's whole framing — HC/mHC as recurrent
+  linear-attention depth memory, AttnRes as single-head softmax depth attention,
+  MSAR as multi-head — comes from viewing the residual stream as an *attention
+  mechanism over layers*. This is a genuinely useful mental model: a deep stack is
+  doing retrieval over its own history.
+- **Multi-state and cross-layer access are complementary**, not redundant: the
+  AttnRes+mHC hybrid barely beat AttnRes, but MSAR (which unifies them *by
+  design*) beat both — the conclusion the authors flag for future residual work.
+- **Validated lineage.** mHC and AttnRes have each been used in trillion-param
+  training (DeepSeek-V4-Pro, Kimi K3), so this is a live production-architecture
+  line, not a toy.
+- **Connection to this project.** Same lesson as [[scaling-laws]] from a different
+  angle: *where* you spend compute (here, on better depth-wise retrieval) can beat
+  simply *adding* parameters — an iso-loss speedup is free quality per FLOP, which
+  is exactly the lever a compute-bound harness like [[the-agent-harness]] cares
+  about.

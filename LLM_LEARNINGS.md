@@ -168,6 +168,17 @@ an economic-link graph and trade the slow diffusion of shocks across it (the
   - Drawbacks and limitations
   - Main contribution
   - Anything else worth knowing
+- **Chapter 14: Scaling up Test-Time Compute with Latent Reasoning (Recurrent Depth)**
+  - Motivation / Problem — the cost of thinking out loud
+  - Key Idea / Intuition
+  - Background & Prior Work
+  - Method — prelude, recurrent core, coda, and the unrolling objective
+  - Experiments
+  - Results
+  - Drawbacks / Limitations
+  - Overall Contribution
+  - Connections to other papers in this set
+  - Takeaways / when to use it
 
 ---
 
@@ -4816,9 +4827,9 @@ study note. These papers are not (yet) load-bearing for the RippleSignal
 strategy; they are kept here because each one teaches a transferable lesson about
 how modern language models are trained, shaped, and served.
 
-## How to read these three chapters
+## How to read these chapters
 
-Every chapter follows the **same nine-part template**, so you can compare papers
+Chapters 11–13 follow the **same nine-part template**, so you can compare papers
 on equal footing and find any part fast:
 
 1. **Motivation** — the problem the paper exists to solve.
@@ -4831,13 +4842,29 @@ on equal footing and find any part fast:
 8. **Main contribution** — the one sentence the field will cite.
 9. **Anything else worth knowing** — the asides that do not fit above.
 
-The three papers, in reading order:
+Chapter 14 onward uses an **expanded ten-part template** — the preferred format
+going forward — that splits the one-sentence insight out from the method and adds
+explicit *background*, *cross-paper connections*, and *when-to-use* sections:
+
+1. **Motivation / Problem** — the gap or failure it addresses.
+2. **Key Idea / Intuition** — the one-sentence insight.
+3. **Background & Prior Work** — what came before and what it assumes.
+4. **Method (in detail)** — architecture, objective/loss, training procedure, math.
+5. **Experiments** — datasets, baselines, metrics, setup.
+6. **Results** — quantitative and qualitative findings.
+7. **Drawbacks / Limitations** — what it can't do, failure modes.
+8. **Overall Contribution** — why it mattered, what it enabled.
+9. **Connections to other papers in this set** — how it links to the rest.
+10. **Takeaways / when to use it** — the practitioner's bottom line.
+
+The papers, in reading order:
 
 | Ch. | Week | Paper | One-line thesis |
 |---|---|---|---|
 | 11 | 0 | Why Pretraining Fails to Share Cross-Lingual Knowledge | Disjoint *token spaces* — not grammar or script — are the root cause of a model learning the same fact separately in each language. |
 | 12 | 1 | Matryoshka Language Model Suites | Nest a family of models inside one network so a whole suite trains in one run and serves speculative decoding almost for free. |
 | 13 | 2 | Multi-Stream Attention Residuals (MSAR) | Replace the additive residual stream with *multi-head attention along the depth axis* to use deep stacks more efficiently. |
+| 14 | 3 | Scaling up Test-Time Compute with Latent Reasoning (Recurrent Depth) | Add a looped latent block so the model can "think" by iterating in continuous space at test time — scaling compute without emitting a single extra token. |
 
 ---
 
@@ -5478,3 +5505,320 @@ $m=8$ barely improves on $m=4$ (1.846 vs 1.847) → $m=4$ default.
   simply *adding* parameters — an iso-loss speedup is free quality per FLOP, which
   is exactly the lever a compute-bound harness like [[the-agent-harness]] cares
   about.
+
+---
+
+# Chapter 14: Scaling up Test-Time Compute with Latent Reasoning (Recurrent Depth)
+
+*Geiping, McLeish, Jain, Kirchenbauer, Singh, Bartoldson, Kailkhura, Bhatele &
+Goldstein (ELLIS Institute Tübingen / Max-Planck Institute for Intelligent
+Systems / University of Maryland / Lawrence Livermore National Laboratory),
+arXiv 2502.05171v2, Feb 2025. Model: "Huginn-0125", 3.5B parameters, 800B
+tokens.*
+
+> This chapter uses the **ten-part template** introduced at the top of the Active
+> Reading section: Motivation, Key Idea, Background & Prior Work, Method,
+> Experiments, Results, Drawbacks, Overall Contribution, Connections, Takeaways.
+
+Mainstream "reasoning" models scale test-time compute by **talking more** — they
+emit a long chain-of-thought (CoT) and let the extra tokens carry the extra
+thinking. This paper asks whether a model can instead **think harder without
+speaking**: iterate a recurrent block in continuous latent space an arbitrary
+number of times before committing to a single output token. It is the
+large-scale realisation of the *looped-transformer* idea sketched in
+[[where-to-spend-computation]].
+
+## Motivation / Problem — the cost of thinking out loud
+
+The dominant recipe for test-time scaling (OpenAI o1-style, DeepSeek-R1) is
+post-training on long CoT demonstrations so the model externalises intermediate
+steps into its context window. That works, but it carries three structural costs
+the authors want to avoid:
+
+1. **It needs bespoke data.** CoT ability has to be taught with long,
+   domain-specific reasoning demonstrations. No demonstrations, no reasoning.
+2. **It needs long context (and the memory that implies).** Every intermediate
+   thought is a token in the KV-cache; hard problems blow up the context window
+   and force specialised long-context machinery ([[engineering-long-contexts]]).
+3. **It is lossy by construction.** Every step of internal computation must be
+   *projected down to a single discrete token* before the next step can begin.
+   Reasoning that does not verbalise cleanly — spatial intuition, planning,
+   parallel exploration of several hypotheses — is squeezed through a one-token
+   bottleneck.
+
+The underlying claim: forcing "expensive internal reasoning to always be
+projected down to a single verbalized next token appears wasteful." There should
+be a way to spend compute *in the latent space itself*.
+
+## Key Idea / Intuition
+
+**Give the transformer a block that loops.** Embed the input, then apply a shared
+**recurrent core block** $R$ some number of times $r$ — chosen fresh at test time —
+and only then decode. Each iteration refines a latent state $s_i \in
+\mathbb{R}^{n\times h}$; more iterations = more "depth" = more thinking, with **no
+extra tokens emitted and no CoT data required.** A model with only 8 real layers,
+iterated 32 times, behaves like a 132-layer network; at 3.5B parameters it burns
+FLOPs comparable to a ~32B dense transformer and keeps improving on reasoning
+benchmarks up to a budget equivalent to a **~50B-parameter** model. Recurrent
+depth is pitched as a *third scaling axis*, orthogonal to (a) more parameters and
+(b) more verbalised inference tokens.
+
+## Background & Prior Work
+
+Recurrence as a route to *adaptive computation* is old: RNNs, Hopfield networks,
+Adaptive Computation Time (Graves, 2017). For transformers specifically:
+
+- **Universal / looped Transformers** (Dehghani et al., 2019) share weights across
+  depth to approximate Turing-complete computation; **ALBERT** (Lan et al., 2019)
+  used fixed cross-layer weight sharing at scale. This paper makes the recurrence
+  count *variable and large at test time*.
+- **"Deep thinking" literature** (Schwarzschild et al., 2021; Bansal et al., 2022;
+  McLeish et al., 2024) established the two tricks that make depth recurrence
+  *generalise* to more iterations than seen in training: **input injection** (feed
+  the embedded input at every step) and **randomised unrolling** (sample the
+  iteration count during training).
+- **Deep equilibrium models (DEQ)** (Bai et al., 2019) solve for a fixed point
+  directly; **diffusion / latent-diffusion** models iterate a denoiser. This work
+  deliberately uses neither the DEQ "direct" fixed-point objective nor a diffusion
+  surrogate — its contribution includes the claim that **truncated unrolling** is
+  the *scalable* training objective.
+- **Path independence** (Anil et al., 2022): random-initialised recurrences that
+  converge to the same behaviour regardless of start state — the property this
+  architecture is engineered to preserve.
+- **Continuous CoT / Coconut** (Hao et al., 2024) *finetunes* a fixed-depth model
+  to accept its own last hidden state as the next input — effectively turning it
+  into a shallow depth-recurrent model. The distinction this paper draws: pretrain
+  for recurrence from scratch, needing no CoT data, versus finetune it in later.
+
+Prerequisites worth having loaded: RoPE and the KV-cache
+([[engineering-long-contexts]]), RMSNorm and residual/PreNorm blocks, and — for the
+"132 effective layers" intuition — the result from **Chapter 4** that *depth
+creates exponentially many linear pieces*, so iterating a block is an extreme form
+of going deep.
+
+## Method — prelude, recurrent core, coda, and the unrolling objective
+
+**Macro-architecture — three functional groups.** A decoder-only transformer split
+into a triplet $(l_P, l_R, l_C)$:
+
+- **Prelude $P$** ($l_P$ layers) — embeds tokens into latent space.
+- **Recurrent core $R$** ($l_R$ layers) — the looped unit, operating on state $s$.
+- **Coda $C$** ($l_C$ layers) — un-embeds and holds the (tied) prediction head.
+
+Given $r$ iterations and input tokens $x$:
+
+$$
+e = P(x),\qquad
+s_0 \sim \mathcal N(0,\sigma^2 I_{n\cdot h}),\qquad
+s_i = R(e, s_{i-1})\ \ \text{for } i = 1,\dots,r,\qquad
+p = C(s_r).
+$$
+
+Two design choices are load-bearing:
+
+- **Input injection every step.** $e$ is fed back into $R$ at *every* iteration, not
+  just at $s_0$. The analogy is gradient descent $x_{k+1} = x_k - \nabla_x E(x_k,
+  y)$: you must re-supply the data $y$ each step or the iteration only depends on
+  its boundary condition and cannot represent a stable, data-dependent operator.
+- **Random initial state → path independence.** Starting $s_0$ from noise (rather
+  than from $e$) makes the recurrence converge to a steady state independent of
+  initialisation — so it extrapolates to more iterations at test time. An ablation
+  that feeds the step index into the block ($s_i = R_i(e,s_{i-1})$) *breaks* this
+  and the model stops extrapolating.
+
+**Micro-architecture.** Standard-ish layers: causal self-attention with **RoPE
+(base 50000)**, **gated SiLU MLP**, **RMSNorm**, learnable biases only on queries
+and keys. The core's **adapter** $A:\mathbb{R}^{2h}\!\to\!\mathbb{R}^{h}$
+*concatenates* $s_{i-1}$ and $e$ (concatenation beats addition at scale). Layers use
+a **"sandwich" norm** — normalising both before *and* after each sub-block — which
+turned out to be *required* (not merely nice) to train the recurrence at scale:
+
+$$
+\hat x_l = n_2\!\big(x_{l-1} + \mathrm{Attn}(n_1(x_{l-1}))\big),\qquad
+x_l = n_4\!\big(\hat x_l + \mathrm{MLP}(n_3(\hat x_l))\big).
+$$
+
+The large model is $(l_P,l_R,l_C) = (2,4,2)$ with $h=5280$ (55 heads × 96), MLP
+inner dim 17920. That is **only 8 real layers**, but at $r=32$ it unfolds to
+$2 + 4r + 2 = 132$ effective layers — deeper than any fixed-depth transformer of
+comparable size. Parameter split: ≈1.5B in prelude+coda, ≈1.5B in the recurrent
+core, ≈0.5B in the tied embedding.
+
+**Training objective — randomised unrolling.** Sample a *different* iteration count
+$r$ per sequence and optimise the expected next-token loss over both data and
+iteration count:
+
+$$
+\mathcal L(\theta) = \mathbb E_{x\sim X}\,\mathbb E_{r\sim\Lambda}\;
+\mathcal L\big(m_\theta(x,r),\,x'\big),
+$$
+
+with $x'$ the left-shifted targets. $\Lambda$ is a **log-normal Poisson**
+distribution (mean $\bar r = 32$, i.e. mean sampled $\approx 33$, with a heavy
+tail): $\tau\sim\mathcal N(\log\bar r - \tfrac12\sigma^2,\sigma)$, $r\sim
+\mathrm{Poisson}(e^\tau)+1$. Most steps are cheap; the occasional long unroll
+teaches extrapolation.
+
+**Truncated backpropagation.** To keep memory finite despite the heavy tail,
+backprop only through the **last $k=8$ iterations** — maximum activation memory and
+backward compute become *independent of $r$*. This is truncated BPTT, but recurrent
+in **depth** rather than time. (The prelude still gets gradient every step, because
+$e$ is injected every step.)
+
+**Scaling and the two failed runs.** Trained on Oak Ridge's **Frontier**
+supercomputer (AMD MI250X, up to 4096 GPUs), bf16, Adam with update clipping,
+**constant LR** warming to a peak and never cooling. Weight sharing keeps the model
+small enough for **data-parallelism only** (no tensor parallelism), with a 16M-token
+global batch — minimising the interconnect traffic that usually bottlenecks large
+runs. Crucially, *at small scale every norm/init worked; at scale they did not.*
+The first two runs collapsed:
+
+- **Bad Run 1** — representation collapse: token-dimension hidden-state correlation
+  shoots to 1.0 (the model predicts the *same* state for every token). Each
+  recurrent step compounds the mixing until collapse.
+- **Bad Run 2** — a local minimum where the model learns to **ignore the incoming
+  state $s$**, so validation perplexity is identical at $r=1$ and $r=32$ (recurrence
+  does nothing).
+- **Main run** — fixed by the sandwich-norm block, the learned adapter, an
+  embedding scale, and dropping peak LR to $4\times10^{-5}$. It then trained
+  smoothly for 750B+ more tokens with no loss spikes.
+
+## Experiments
+
+- **Model under test:** the 3.5B / 795B-token "Huginn-0125" checkpoint, evaluated at
+  test-time recurrences $r \in \{1,4,8,16,32,64\}$.
+- **Baselines:** fully-open LMs of similar size — Amber-7B, Pythia (2.8/6.9/12B),
+  OLMo-1B and the OLMo-7B / OLMo-2 generations, plus StarCoder2 (3B/7B) for code.
+  Also a **non-recurrent twin**: the identical architecture run with a single core
+  pass, trained 180B tokens in the same setup — the clean ablation isolating what
+  recurrence buys.
+- **Harnesses:** lm-eval-harness (zero-shot) for ARC-E/C, HellaSwag, MMLU, OBQA,
+  PiQA, SciQ, WinoGrande; GSM8K (+8-way CoT), Minerva MATH, MathQA for math;
+  MBPP + HumanEval (pass@1) for code; MTBench for the adaptive-compute sanity check.
+- **Emergent-ability probes:** per-token adaptive exit (KL between successive steps
+  < $5\times10^{-4}$), KV-cache sharing (write cache slot $i \bmod k$), continuous
+  CoT (warm-start $s_0$ from the previous token's final state), self-speculative
+  decoding, and PCA visualisations of latent trajectories.
+
+## Results
+
+- **Compute in = performance out.** Accuracy rises monotonically with test-time
+  recurrence, and **saturation is task-dependent**: easy tasks (HellaSwag, OpenBookQA)
+  plateau by ~8 iterations; reasoning-heavy tasks (GSM8K CoT) keep improving out to
+  32–64. More few-shot context in the prompt *raises* the saturation point — with 50
+  ARC-C examples the model profitably uses ~32 iterations vs ~8 with none — i.e. it
+  spends more latent compute when there is more to reason over.
+- **Punches above its size.** At 3.5B / 0.8T tokens it is roughly on par with the
+  first-generation **OLMo-7B** on standard benchmarks (ARC-C 38.2, HellaSwag 65.2,
+  SciQ 93.5 at $r=32$), though it trails the newer, more carefully curated OLMo-2.
+  On **math** it beats everything except OLMo-2 (GSM8K CoT 34.8/42.1 at $r=32$; an
+  EMA-averaged checkpoint reaches **47.2% flexible at $r=64$**). On **code** it beats
+  all general-purpose open models (HumanEval 23.2, MBPP 24.8) while trailing
+  dedicated code models like StarCoder2.
+- **The gains live in the recurrence.** Against the non-recurrent twin at 180B
+  tokens, the recurrent model wins most on *hard* tasks — GSM8K CoT ≈ 5× better,
+  big ARC-Challenge gains — and ties on pure recall (SciQ). And the recurrent model
+  *evaluated at $r=1$* barely improves between the 180B and 800B checkpoints: the
+  extra training is being encoded **into the iterated block**, not the prelude/coda.
+- **Memorise vs reason.** On OpenBookQA, switching from closed-book to *open-book*
+  (a relevant fact supplied) nearly closes the gap to OLMo-2 — consistent with a
+  small model that has **less capacity to memorise facts but more to reason over
+  context.**
+- **Zero-shot abilities that usually require bespoke training:**
+  - **Per-token adaptive compute** via a KL early-exit — and the exit count *varies
+    by topic* (exits earlier on high-school math than on moral-scenario questions),
+    with negligible MTBench quality loss. Early-exit KV gaps are handled by attending
+    to the deepest available cache entry.
+  - **KV-cache sharing** across iterations ($i \bmod k$) with no measured quality drop.
+  - **Continuous latent CoT** by warm-starting from the previous token's final state,
+    which cuts the steps-to-converge by 1–2.
+  - **Self-speculative decoding** with no separate draft model: draft with few
+    iterations, verify with more, reusing the drafting states.
+- **Interpretable latent dynamics emerge with scale.** PCA of the latent
+  trajectories shows tokens that simply **converge**, others that fall into
+  **orbits** (observed on arithmetic/deliberation tokens), and **sliders** — a steady
+  drift the model may use to *count iterations*. Convergence is slowest on the
+  semantically key tokens of a prompt, and the model stays **path-independent**
+  despite these rich dynamics.
+
+## Drawbacks / Limitations
+
+- **Proof-of-concept, by the authors' own framing.** Untested data mixture, no
+  careful curation, LR **never cooled** (patched after the fact with EMA weight
+  averaging to simulate a cooldown). 0.8T tokens is large vs old open models but
+  small vs modern ones — hence the lag behind OLMo-2.
+- **Fragile at scale.** Two full runs collapsed (representation collapse; a
+  recurrence-ignoring local minimum). The architecture needs the specific
+  sandwich-norm + low-LR + learned-adapter recipe; the design space is unforgiving.
+- **No post-training explored.** No RL, no instruction tuning, no CoT internalisation
+  — all flagged as future work. It is a pretrained base only.
+- **Latent reasoning is hard to inspect.** The upside (not projecting to tokens) is
+  also the downside: you cannot *read* the model's thoughts the way you can read a
+  verbalised CoT, so auditing/debugging the reasoning is harder.
+- **Compute-heavy per token** — more FLOPs per parameter is a feature for
+  interconnect-bound training but a cost at inference if you can't exit early.
+- Single recurrence stage and no interaction with modern efficiency tricks (linear
+  attention, MoE) studied yet.
+
+## Overall Contribution
+
+The **first large-scale (3.5B-param, 800B-token) latent recurrent-depth language
+model**, demonstrating that test-time compute can be scaled by *iterating in
+continuous latent space* rather than by emitting more tokens — **a third scaling
+axis** that needs no CoT data, works with small context windows, and can represent
+reasoning that does not verbalise. As a bonus, the architecture makes several
+features that normally require dedicated training — per-token adaptive compute,
+KV-cache sharing, self-speculative decoding, continuous CoT — fall out
+**zero-shot**.
+
+## Connections to other papers in this set
+
+- **[[where-to-spend-computation]] (Ch 9)** — this *is* the looped/recurrent-depth
+  thesis of that chapter, realised at scale. "Where to spend compute: depth, CoT,
+  looping" → here looping wins a concrete head-to-head against its feed-forward twin.
+- **[[scaling-laws]] (Ch 10)** — introduces the "third axis" explicitly and leans on
+  the materialised-vs-real-parameter distinction ($6ND$-style compute accounting): a
+  3.5B model consuming ~32B-model FLOPs. Test-time recurrence trades inference FLOPs
+  for quality, the inference-aware side of the Chinchilla trade-off.
+- **[[code-world-models]] (Ch 2)** — the counterpoint on *how* to buy reasoning:
+  CWM-style RL-with-verifiable-rewards and verbalised CoT vs latent recurrence. Both
+  chase test-time compute; this one needs no verifier and no reasoning traces. A
+  natural future hybrid: RL *on top of* a recurrent base.
+- **[[engineering-long-contexts]] / [[long-contexts]] (Ch 3)** — reuses RoPE and
+  directly exploits the KV-cache (sharing, early-exit cache handling); its whole
+  pitch is reasoning *without* paying the long-context memory tax.
+- **[[manufacturing-the-right-signal]] (Ch 7)** — the authors frame recurrent depth
+  as complementary to **MoE**: recurrence is compute-heavy/parameter-light (good at
+  learning reasoning), MoE is parameter-heavy/compute-light (good at storing facts).
+  A *recurrent MoE* could revisit the same expert across iterations.
+- **Chapter 4 (universal approximation / depth)** — "iterate a block 32×" is the
+  extreme of the depth-makes-exponentially-many-pieces result; recurrence is a prior
+  toward *algorithmic* depth rather than width/memorisation.
+
+## Takeaways / when to use it
+
+- **Reach for recurrent depth when** you want to scale test-time compute but can't
+  (or won't) build CoT data, want to keep context windows small, are
+  interconnect/communication-bound at train time (more FLOPs per param → higher
+  device utilisation), or want **free per-token adaptive compute** — spend iterations
+  only on the hard tokens.
+- **Avoid / be cautious when** you need auditable reasoning traces, heavy factual
+  recall (a small recurrent model memorises less), or a turnkey recipe — the training
+  is fragile and this is still a base model with no post-training.
+- **For this project (LLM-as-world-simulator).** This is the most directly
+  *actionable* idea in the Active Reading set. A latent world-simulator could
+  **deliberate longer on ambiguous market states** — more recurrence on a confusing
+  event, early exit on an obvious one — scaling "thinking" per decision without
+  emitting tokens, and reasoning in a geometry (orbits, drifts) that need not
+  verbalise. Adaptive compute keyed to signal difficulty is exactly the knob a
+  compute-bound harness like [[the-agent-harness]] wants. The honest caveat from the
+  paper carries over: it rewards *reasoning over context* far more than *recall of
+  memorised facts* — fit it to the part of the problem that is deliberation, not lookup.
+
+> **The one line to carry out of the chapter.**
+> $$\boxed{\;\text{more test-time compute} \;=\; \text{more latent iterations}\;\neq\;\text{more output tokens}\;}$$
+> Loop a shared core block, train it on a random number of unrolls with input
+> injection and truncated backprop, and a 3.5B model can "think" its way to
+> ~50B-equivalent reasoning performance — no CoT data, small context, adaptive
+> compute and speculative decoding for free — at the cost of fragile training and
+> un-inspectable thoughts.
